@@ -21,6 +21,9 @@ const CONFIG = {
     // 금액: 소수점 허용 (예: 7,614.29 / 76,142.9)
     AMOUNT_LINE: /([\d,]+)\s+(EA|KG|MT|PC|SET|BOX|CTN|PCS|ST|RO|NO|PR|PKG|BT|DZ|M2|M3|L|G|TON|M|개|매|본|장|식|롤)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)/i,
 
+    // 외화 금액 라인: 수량 단위 단가 [통화코드] 합계 (예: 2 EA 727.36 USD 1,454.72)
+    AMOUNT_LINE_WITH_CURR: /([\d,]+)\s+(EA|KG|MT|PC|SET|BOX|CTN|PCS|ST|RO|NO|PR|PKG|BT|DZ|M2|M3|L|G|TON|M|개|매|본|장|식|롤)\s+([\d,]+(?:\.\d+)?)\s+(USD|EUR|JPY|GBP|CNY|CHF|HKD|SGD|AUD|CAD|NZD|SEK|NOK|DKK|MYR|THB|INR|VND|IDR|PHP|BRL|RUB|TWD|KWD|SAR|AED|TRY)\s+([\d,]+(?:\.\d+)?)/i,
+
     // 가짜 금액 라인 필터: 이 키워드가 있는 줄은 제외
     SKIP_LINE: /환급물량|세관기재란|신고인기재란|납부번호|총세액합계|부가가치세과표/,
   },
@@ -33,6 +36,12 @@ const CONFIG = {
     return `수입신고필증_집계_${y}${m}${day}.xlsx`;
   },
 };
+
+const FOREIGN_CURRENCIES = new Set([
+  'USD','EUR','JPY','GBP','CNY','CHF','HKD','SGD','AUD','CAD',
+  'NZD','SEK','NOK','DKK','MYR','THB','INR','VND','IDR','PHP',
+  'BRL','RUB','TWD','KWD','SAR','AED','TRY',
+]);
 
 /* ── STATE ───────────────────────────────────────────────────── */
 const STATE = {
@@ -222,6 +231,7 @@ function extractFromText(rawText, fileName) {
   const declDate   = extractDeclarationDate(rawText);
   const declMonth  = declDate ? declDate.slice(0, 7) : '';
   const vendor     = extractVendor(rawText);
+  const declCurrency = extractCurrency(rawText);
   const items      = extractItemLines(rawText);
 
   if (items.length === 0) {
@@ -240,6 +250,7 @@ function extractFromText(rawText, fileName) {
       quantity:    item.quantity,
       unitPrice:   item.unitPrice,
       totalAmount: item.totalAmount,
+      currency:    item.currency || declCurrency,
     });
   }
 
@@ -286,6 +297,22 @@ function extractVendor(text) {
   return '(알 수 없음)';
 }
 
+function extractCurrency(text) {
+  // 결제금액 USD 형식 (갑지 헤더)
+  const m1 = text.match(/결제금액\s+([A-Z]{3})/);
+  if (m1 && FOREIGN_CURRENCIES.has(m1[1])) return m1[1];
+
+  // 통화 코드 필드
+  const m2 = text.match(/\b통화\s*[:：]?\s*([A-Z]{3})\b/);
+  if (m2 && FOREIGN_CURRENCIES.has(m2[1])) return m2[1];
+
+  // 외화금액 필드
+  const m3 = text.match(/외화금액\s+([A-Z]{3})/);
+  if (m3 && FOREIGN_CURRENCIES.has(m3[1])) return m3[1];
+
+  return 'KRW';
+}
+
 function extractItemName(text) {
   // 새 형식: "3 1   거래품명   ITEM NAME" (소모품·부품류)
   const m31new = text.match(/3\s*1\s+거래품명\s+([^\n\r]+)/);
@@ -319,17 +346,27 @@ function extractItemLines(text) {
       const chunkStart = noMatch.index + noMatch[0].length;
       const chunk = text.slice(chunkStart, chunkStart + 600);
 
-      const amtMatch = chunk.match(CONFIG.REGEX.AMOUNT_LINE);
-      if (!amtMatch) continue;
+      let amtMatch = chunk.match(CONFIG.REGEX.AMOUNT_LINE_WITH_CURR);
+      let itemCurrency = null;
+      let qty, unitPrice, total;
 
-      const qty       = parseKoreanNumber(amtMatch[1]);
-      const unitPrice = parseKoreanNumber(amtMatch[3]);
-      const total     = parseKoreanNumber(amtMatch[4]);
+      if (amtMatch) {
+        itemCurrency = amtMatch[4].toUpperCase();
+        qty       = parseKoreanNumber(amtMatch[1]);
+        unitPrice = parseKoreanNumber(amtMatch[3]);
+        total     = parseKoreanNumber(amtMatch[5]);
+      } else {
+        amtMatch = chunk.match(CONFIG.REGEX.AMOUNT_LINE);
+        if (!amtMatch) continue;
+        qty       = parseKoreanNumber(amtMatch[1]);
+        unitPrice = parseKoreanNumber(amtMatch[3]);
+        total     = parseKoreanNumber(amtMatch[4]);
+      }
       // (NO. XX) 앵커 기반은 소액도 허용 (부품류: 400원, 214원 등 실제 존재)
       if (unitPrice === 0 && total === 0) continue;
 
       // 품목 설명 추출
-      const amtIdx = chunk.search(CONFIG.REGEX.AMOUNT_LINE);
+      const amtIdx = chunk.search(itemCurrency ? CONFIG.REGEX.AMOUNT_LINE_WITH_CURR : CONFIG.REGEX.AMOUNT_LINE);
       let itemDesc = '';
       if (amtIdx > 0) {
         // 수량 앞 텍스트: 줄바꿈 제거 후 앞의 품목코드(숫자)·국가코드(2자리 대문자) 정리
@@ -362,6 +399,7 @@ function extractItemLines(text) {
         quantity:    qty,
         unitPrice,
         totalAmount: total,
+        currency:    itemCurrency,
       });
     }
   }
@@ -373,15 +411,25 @@ function extractItemLines(text) {
       const line = lines[i].trim();
       if (!line || CONFIG.REGEX.SKIP_LINE.test(line)) continue;
 
-      const amtMatch = line.match(CONFIG.REGEX.AMOUNT_LINE);
-      if (!amtMatch) continue;
+      let amtMatch = line.match(CONFIG.REGEX.AMOUNT_LINE_WITH_CURR);
+      let lineCurrency = null;
+      let qty, unitPrice, total;
 
-      const qty       = parseKoreanNumber(amtMatch[1]);
-      const unitPrice = parseKoreanNumber(amtMatch[3]);
-      const total     = parseKoreanNumber(amtMatch[4]);
+      if (amtMatch) {
+        lineCurrency = amtMatch[4].toUpperCase();
+        qty       = parseKoreanNumber(amtMatch[1]);
+        unitPrice = parseKoreanNumber(amtMatch[3]);
+        total     = parseKoreanNumber(amtMatch[5]);
+      } else {
+        amtMatch = line.match(CONFIG.REGEX.AMOUNT_LINE);
+        if (!amtMatch) continue;
+        qty       = parseKoreanNumber(amtMatch[1]);
+        unitPrice = parseKoreanNumber(amtMatch[3]);
+        total     = parseKoreanNumber(amtMatch[4]);
+      }
       if (total < 1000) continue;
 
-      const amtIdx = line.search(CONFIG.REGEX.AMOUNT_LINE);
+      const amtIdx = line.search(lineCurrency ? CONFIG.REGEX.AMOUNT_LINE_WITH_CURR : CONFIG.REGEX.AMOUNT_LINE);
       const itemDesc = amtIdx > 0
         ? line.slice(0, amtIdx).replace(/^[\d.\s]+/, '').trim()
         : '';
@@ -392,7 +440,7 @@ function extractItemLines(text) {
         if (seobunM) { hsCode = seobunM[1].replace(/[.\-]/g, '').slice(0, 10); break; }
       }
 
-      items.push({ hsCode, itemName: itemDesc || globalItemName, quantity: qty, unitPrice, totalAmount: total });
+      items.push({ hsCode, itemName: itemDesc || globalItemName, quantity: qty, unitPrice, totalAmount: total, currency: lineCurrency });
     }
   }
 
@@ -480,7 +528,9 @@ function renderTable(rows) {
     return;
   }
 
-  tbody.innerHTML = rows.map(r => `
+  tbody.innerHTML = rows.map(r => {
+    const isForeign = r.currency && r.currency !== 'KRW';
+    return `
     <tr>
       <td class="decl-number">${escHtml(r.declNumber)}</td>
       <td>${escHtml(r.declDate)}</td>
@@ -489,26 +539,68 @@ function renderTable(rows) {
       <td>${escHtml(r.itemName)}</td>
       <td class="num">${formatNumber(r.quantity)}</td>
       <td class="num">${formatNumber(r.unitPrice)}</td>
+      <td class="currency-cell"><span class="currency-tag ${isForeign ? 'currency-tag--foreign' : 'currency-tag--krw'}">${escHtml(r.currency || 'KRW')}</span></td>
       <td class="num">${formatNumber(r.totalAmount)}</td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 
-  const grandTotal = rows.reduce((s, r) => s + r.totalAmount, 0);
-  tfoot.innerHTML = `
+  const byCurrency = new Map();
+  for (const r of rows) {
+    const c = r.currency || 'KRW';
+    byCurrency.set(c, (byCurrency.get(c) || 0) + r.totalAmount);
+  }
+  const currEntries = [...byCurrency.entries()].sort((a, b) =>
+    a[0] === 'KRW' ? -1 : b[0] === 'KRW' ? 1 : a[0].localeCompare(b[0])
+  );
+  tfoot.innerHTML = currEntries.map(([curr, total], idx) => {
+    const isForeign = curr !== 'KRW';
+    return `
     <tr>
-      <td colspan="5" style="font-family:var(--font-body);font-size:0.85rem;">합계</td>
+      <td colspan="5" style="font-family:var(--font-body);font-size:0.85rem;">${idx === 0 ? '합계' : ''}</td>
       <td class="num"></td>
       <td class="num"></td>
-      <td class="num">${formatNumber(grandTotal)}</td>
-    </tr>
-  `;
+      <td class="currency-cell"><span class="currency-tag ${isForeign ? 'currency-tag--foreign' : 'currency-tag--krw'}">${escHtml(curr)}</span></td>
+      <td class="num">${formatNumber(total)}</td>
+    </tr>`;
+  }).join('');
 }
 
 function renderSummaryStats() {
-  const grandTotal = STATE.rows.reduce((s, r) => s + r.totalAmount, 0);
   document.getElementById('statFiles').textContent = STATE.fileCount;
   document.getElementById('statItems').textContent = STATE.rows.length;
-  document.getElementById('statTotal').textContent = formatNumber(grandTotal);
+
+  const byCurrency = new Map();
+  for (const r of STATE.rows) {
+    const c = r.currency || 'KRW';
+    byCurrency.set(c, (byCurrency.get(c) || 0) + r.totalAmount);
+  }
+
+  const statTotal = document.getElementById('statTotal');
+  const statUnit  = document.getElementById('statUnit');
+
+  if (byCurrency.size === 0) {
+    statTotal.textContent = '0';
+    statUnit.textContent  = 'KRW';
+    return;
+  }
+
+  if (byCurrency.size === 1) {
+    const [[curr, total]] = [...byCurrency.entries()];
+    statTotal.textContent = formatNumber(total);
+    statUnit.textContent  = curr;
+    return;
+  }
+
+  // 복수 통화: KRW 우선 표시
+  const sorted = [...byCurrency.entries()].sort((a, b) =>
+    a[0] === 'KRW' ? -1 : b[0] === 'KRW' ? 1 : a[0].localeCompare(b[0])
+  );
+  statTotal.innerHTML = sorted.map(([c, v], i) =>
+    `<span style="display:block;font-size:${i === 0 ? '1.45rem' : '1rem'};line-height:1.3">${formatNumber(v)}</span>`
+  ).join('');
+  statUnit.innerHTML = sorted.map(([c], i) =>
+    `<span style="display:block;font-size:${i === 0 ? '0.78rem' : '0.7rem'}">${escHtml(c)}</span>`
+  ).join('');
 }
 
 function renderWarnings(warnings) {
@@ -535,7 +627,7 @@ function exportExcel() {
 
   // Sheet 1: 원본
   const sheet1Data = [
-    ['신고번호', '신고일자', '거래처', 'HS코드', '품목명', '수량', '단가', '합계금액'],
+    ['신고번호', '신고일자', '거래처', 'HS코드', '품목명', '수량', '단가', '통화', '합계금액'],
     ...STATE.rows.map(r => [
       r.declNumber,
       r.declDate,
@@ -544,37 +636,47 @@ function exportExcel() {
       r.itemName,
       r.quantity,
       r.unitPrice,
+      r.currency || 'KRW',
       r.totalAmount,
     ]),
   ];
   const ws1 = XLSX.utils.aoa_to_sheet(sheet1Data);
   ws1['!cols'] = [
     { wch: 20 }, { wch: 12 }, { wch: 25 }, { wch: 14 },
-    { wch: 35 }, { wch: 10 }, { wch: 14 }, { wch: 16 },
+    { wch: 35 }, { wch: 10 }, { wch: 14 }, { wch: 8 }, { wch: 16 },
   ];
-  applyNumberFormat(ws1, sheet1Data.length, [5, 6, 7], '#,##0');
+  applyNumberFormat(ws1, sheet1Data.length, [5, 6, 8], '#,##0');
   XLSX.utils.book_append_sheet(wb, ws1, '원본');
 
   // Sheet 2: 신고번호별
-  const byDecl = groupAndSum(STATE.rows, 'declNumber', ['declDate', 'vendor']);
+  const byDecl = groupAndSum(STATE.rows, 'declNumber', ['declDate', 'vendor', 'currency']);
   const sheet2Data = [
-    ['신고번호', '신고일자', '거래처', '합계금액'],
-    ...byDecl.map(g => [g.key, g.declDate, g.vendor, g.sum]),
+    ['신고번호', '신고일자', '거래처', '통화', '합계금액'],
+    ...byDecl.map(g => [g.key, g.declDate, g.vendor, g.currency || 'KRW', g.sum]),
   ];
   const ws2 = XLSX.utils.aoa_to_sheet(sheet2Data);
-  ws2['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 25 }, { wch: 16 }];
-  applyNumberFormat(ws2, sheet2Data.length, [3], '#,##0');
+  ws2['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 25 }, { wch: 8 }, { wch: 16 }];
+  applyNumberFormat(ws2, sheet2Data.length, [4], '#,##0');
   XLSX.utils.book_append_sheet(wb, ws2, '신고번호별');
 
-  // Sheet 3: 월별
-  const byMonth = groupAndSum(STATE.rows, 'declMonth', []);
+  // Sheet 3: 월별 (통화별)
+  const monthCurrMap = new Map();
+  for (const r of STATE.rows) {
+    const key = `${r.declMonth || '(없음)'}__${r.currency || 'KRW'}`;
+    monthCurrMap.set(key, (monthCurrMap.get(key) || 0) + r.totalAmount);
+  }
   const sheet3Data = [
-    ['월', '합계금액'],
-    ...byMonth.map(g => [g.key, g.sum]),
+    ['월', '통화', '합계금액'],
+    ...[...monthCurrMap.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, total]) => {
+        const [month, curr] = key.split('__');
+        return [month, curr, total];
+      }),
   ];
   const ws3 = XLSX.utils.aoa_to_sheet(sheet3Data);
-  ws3['!cols'] = [{ wch: 10 }, { wch: 16 }];
-  applyNumberFormat(ws3, sheet3Data.length, [1], '#,##0');
+  ws3['!cols'] = [{ wch: 10 }, { wch: 8 }, { wch: 16 }];
+  applyNumberFormat(ws3, sheet3Data.length, [2], '#,##0');
   XLSX.utils.book_append_sheet(wb, ws3, '월별');
 
   XLSX.writeFile(wb, CONFIG.EXPORT_FILENAME());

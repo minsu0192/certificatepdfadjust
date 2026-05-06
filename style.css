@@ -421,6 +421,40 @@ body {
   font-size: 0.85rem;
 }
 
+/* ── Currency Column ────────────────────────────────────────── */
+.results-table th.currency-col {
+  text-align: center;
+  width: 56px;
+}
+
+.results-table td.currency-cell {
+  text-align: center;
+  white-space: nowrap;
+  padding: 8px 8px;
+}
+
+.currency-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+}
+
+.currency-tag--krw {
+  color: var(--color-text-muted);
+  background: transparent;
+}
+
+.currency-tag--foreign {
+  color: var(--color-accent);
+  background: var(--color-accent-light);
+  border: 1px solid var(--color-accent-mid);
+  font-weight: 700;
+}
+
 /* ── Parse Warnings ─────────────────────────────────────────── */
 .warnings-details {
   background: var(--color-warning-bg);
