@@ -19,10 +19,10 @@ const CONFIG = {
     // 금액 라인: 수량 단위 단가 합계
     // 단위: UNI-PASS 표준 전체 포함 (ST=piece, RO=roll, PR=pair 등)
     // 금액: 소수점 허용 (예: 7,614.29 / 76,142.9)
-    AMOUNT_LINE: /([\d,]+)\s+(EA|KG|MT|PC|SET|BOX|CTN|PCS|ST|RO|NO|PR|PKG|BT|DZ|M2|M3|L|G|TON|M|개|매|본|장|식|롤)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)/i,
+    AMOUNT_LINE: /([\d,]+)\s+(EA|KG|MT|PC|SET|BOX|CTN|PCS|CS|ST|RO|NO|PR|PKG|BT|DZ|M2|M3|L|G|TON|M|PL|BL|RL|GL|개|매|본|장|식|롤)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)/i,
 
     // 외화 금액 라인: 수량 단위 단가 [통화코드] 합계 (예: 2 EA 727.36 USD 1,454.72)
-    AMOUNT_LINE_WITH_CURR: /([\d,]+)\s+(EA|KG|MT|PC|SET|BOX|CTN|PCS|ST|RO|NO|PR|PKG|BT|DZ|M2|M3|L|G|TON|M|개|매|본|장|식|롤)\s+([\d,]+(?:\.\d+)?)\s+(USD|EUR|JPY|GBP|CNY|CHF|HKD|SGD|AUD|CAD|NZD|SEK|NOK|DKK|MYR|THB|INR|VND|IDR|PHP|BRL|RUB|TWD|KWD|SAR|AED|TRY)\s+([\d,]+(?:\.\d+)?)/i,
+    AMOUNT_LINE_WITH_CURR: /([\d,]+)\s+(EA|KG|MT|PC|SET|BOX|CTN|PCS|CS|ST|RO|NO|PR|PKG|BT|DZ|M2|M3|L|G|TON|M|PL|BL|RL|GL|개|매|본|장|식|롤)\s+([\d,]+(?:\.\d+)?)\s+(USD|EUR|JPY|GBP|CNY|CHF|HKD|SGD|AUD|CAD|NZD|SEK|NOK|DKK|MYR|THB|INR|VND|IDR|PHP|BRL|RUB|TWD|KWD|SAR|AED|TRY)\s+([\d,]+(?:\.\d+)?)/i,
 
     // 가짜 금액 라인 필터: 이 키워드가 있는 줄은 제외
     SKIP_LINE: /환급물량|세관기재란|신고인기재란|납부번호|총세액합계|부가가치세과표/,
@@ -305,28 +305,26 @@ function extractVendor(text) {
 
 function extractCurrency(text) {
   const CURR = 'USD|EUR|JPY|GBP|CNY|CHF|HKD|SGD|AUD|CAD|NZD|SEK|NOK|DKK|MYR|THB|INR|VND|IDR|PHP|BRL|RUB|TWD|KWD|SAR|AED|TRY';
+  // UNI-PASS 결제금액 실제 형식: "EXW-KRW-2,436,333-TT" / "FCA-USD-8,386-TT"
+  // 인코텀즈-통화코드-금액-결제방법 (하이픈 구분)
+  const INCOTERMS = 'EXW|FCA|CPT|CIP|DAP|DPU|DDP|FAS|FOB|CFR|CIF';
 
-  // 결제금액 필드: 스페이스 삽입·개행 모두 허용 (결 제 금 액   \n  USD)
-  let m = text.match(new RegExp(`결\\s*제\\s*금\\s*액[\\s\\S]{0,40}(${CURR})`));
+  // 1순위: 인코텀즈-통화 패턴 (가장 명확, 상품명 오감지 없음)
+  let m = text.match(new RegExp(`(?:${INCOTERMS})-([A-Z]{3})-[\\d]`));
   if (m && FOREIGN_CURRENCIES.has(m[1])) return m[1];
 
-  // 통화 필드 (개행 허용)
+  // 2순위: 결제금액 라벨 근처 외화 코드 (개행·스페이스 허용)
+  m = text.match(new RegExp(`결\\s*제\\s*금\\s*액[\\s\\S]{0,80}(${CURR})`));
+  if (m && FOREIGN_CURRENCIES.has(m[1])) return m[1];
+
+  // 3순위: 통화 필드 (개행 허용)
   m = text.match(new RegExp(`통\\s*화[\\s\\S]{0,20}(${CURR})`));
   if (m && FOREIGN_CURRENCIES.has(m[1])) return m[1];
 
-  // 가격조건: CIF USD / FOB EUR 등
-  m = text.match(new RegExp(`(?:CIF|FOB|CFR|CPT|DAP|DDP|EXW)[\\s\\S]{0,15}(${CURR})`));
-  if (m && FOREIGN_CURRENCIES.has(m[1])) return m[1];
-
-  // 외화금액 필드
-  m = text.match(new RegExp(`외\\s*화\\s*금\\s*액[\\s\\S]{0,30}(${CURR})`));
-  if (m && FOREIGN_CURRENCIES.has(m[1])) return m[1];
-
-  // 폭넓은 폴백: 문서 앞 3000자(헤더) 내 단독 외화 코드
-  // 신고필증 헤더에는 결제금액·가격조건 등이 존재하므로 통화 코드가 반드시 등장
-  const header = text.slice(0, 3000);
-  m = header.match(new RegExp(`\\b(${CURR})\\b`));
-  if (m && FOREIGN_CURRENCIES.has(m[1])) return m[1];
+  // 4순위: 단가/금액 컬럼 헤더에 통화 명시 ("단가(USD)", "금액(USD)")
+  m = text.match(new RegExp(`단가\\s*\\((${CURR})\\)|금액\\s*\\((${CURR})\\)`));
+  const hit = m && (m[1] || m[2]);
+  if (hit && FOREIGN_CURRENCIES.has(hit)) return hit;
 
   return 'KRW';
 }
