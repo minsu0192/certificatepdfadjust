@@ -228,17 +228,12 @@ function extractFromText(rawText, fileName) {
   }
 
   const declNumber = firstMatch[1].replace(/-/g, '');
-  const declDate   = extractDeclarationDate(rawText);
-  const declMonth  = declDate ? declDate.slice(0, 7) : '';
-  const vendor     = extractVendor(rawText);
-  const declCurrency = extractCurrency(rawText);
-  // 디버그: 통화 감지 결과 및 헤더 텍스트 콘솔 출력
-  console.log(`[currency] ${fileName}: ${declCurrency}`);
-  if (declCurrency === 'KRW') {
-    // KRW로 감지된 경우 앞 3000자를 출력해서 실제 통화 코드 위치 확인
-    console.log(`[currency-debug] ${fileName} header:`, rawText.slice(0, 3000));
-  }
-  const items      = extractItemLines(rawText);
+  const declDate        = extractDeclarationDate(rawText);
+  const declMonth       = declDate ? declDate.slice(0, 7) : '';
+  const vendor          = extractVendor(rawText);
+  const declCurrency    = extractCurrency(rawText);
+  const exportCountry   = extractExportCountry(rawText);
+  const items = extractItemLines(rawText);
 
   if (items.length === 0) {
     warns.push(`${fileName} / ${declNumber}: 품목 라인을 찾을 수 없음`);
@@ -257,7 +252,7 @@ function extractFromText(rawText, fileName) {
       unitPrice:   item.unitPrice,
       totalAmount: item.totalAmount,
       currency:      item.currency || declCurrency,
-      originCountry: item.originCountry || '',
+      exportCountry,
     });
   }
 
@@ -328,6 +323,12 @@ function extractCurrency(text) {
   if (hit && FOREIGN_CURRENCIES.has(hit)) return hit;
 
   return 'KRW';
+}
+
+function extractExportCountry(text) {
+  // 갑지 선적국 필드: "선적국 HK HKGONG" → HK, "선적국 SG" → SG
+  const m = text.match(/선\s*적\s*국\s+([A-Z]{2})\b/);
+  return m ? m[1] : '';
 }
 
 function extractItemName(text) {
@@ -403,31 +404,20 @@ function extractItemLines(text) {
         }
       }
 
-      // HS코드 + 적출국: 금액 이후 800자 내 탐색
+      // HS코드: 금액 이후 800자 내 세번부호 탐색
       const afterStart = chunkStart + amtIdx + amtMatch[0].length;
       const afterChunk = text.slice(afterStart, afterStart + 800);
       let hsCode = '';
       const seobunM = afterChunk.match(CONFIG.REGEX.HS_SEOBUN);
       if (seobunM) hsCode = seobunM[1].replace(/[.\-]/g, '').slice(0, 10);
 
-      // 적출국: 원산지 코드 앞 2자리 (예: HK-B-Y-8 → HK, CN-4-E-04 → CN)
-      let originCountry = '';
-      const origM = afterChunk.match(/적\s*출\s*국\s+([A-Z]{2})/);
-      if (origM) {
-        originCountry = origM[1];
-      } else {
-        const wsanM = afterChunk.match(/원\s*산\s*지\s+(([A-Z]{2})[\w.-]*)/);
-        if (wsanM) originCountry = wsanM[2];
-      }
-
       items.push({
         hsCode,
-        itemName:      itemDesc || globalItemName,
-        quantity:      qty,
+        itemName:    itemDesc || globalItemName,
+        quantity:    qty,
         unitPrice,
-        totalAmount:   total,
-        currency:      itemCurrency,
-        originCountry,
+        totalAmount: total,
+        currency:    itemCurrency,
       });
     }
   }
@@ -463,22 +453,12 @@ function extractItemLines(text) {
         : '';
 
       let hsCode = '';
-      let originCountry = '';
       for (let k = i + 1; k < Math.min(i + 25, lines.length); k++) {
-        if (!hsCode) {
-          const seobunM = lines[k].match(CONFIG.REGEX.HS_SEOBUN);
-          if (seobunM) hsCode = seobunM[1].replace(/[.\-]/g, '').slice(0, 10);
-        }
-        if (!originCountry) {
-          const origM = lines[k].match(/적\s*출\s*국\s+([A-Z]{2})/);
-          if (origM) { originCountry = origM[1]; continue; }
-          const wsanM = lines[k].match(/원\s*산\s*지\s+(([A-Z]{2})[\w.-]*)/);
-          if (wsanM) originCountry = wsanM[2];
-        }
-        if (hsCode && originCountry) break;
+        const seobunM = lines[k].match(CONFIG.REGEX.HS_SEOBUN);
+        if (seobunM) { hsCode = seobunM[1].replace(/[.\-]/g, '').slice(0, 10); break; }
       }
 
-      items.push({ hsCode, itemName: itemDesc || globalItemName, quantity: qty, unitPrice, totalAmount: total, currency: lineCurrency, originCountry });
+      items.push({ hsCode, itemName: itemDesc || globalItemName, quantity: qty, unitPrice, totalAmount: total, currency: lineCurrency });
     }
   }
 
@@ -560,7 +540,7 @@ function renderTable(rows) {
   const tfoot = document.getElementById('resultsFoot');
 
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--color-text-muted);padding:24px;">추출된 데이터가 없습니다</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--color-text-muted);padding:24px;">추출된 데이터가 없습니다</td></tr>';
     tfoot.innerHTML = '';
     return;
   }
@@ -574,7 +554,6 @@ function renderTable(rows) {
       <td>${escHtml(r.vendor)}</td>
       <td class="code">${escHtml(r.hsCode)}</td>
       <td>${escHtml(r.itemName)}</td>
-      <td class="country-cell">${escHtml(r.originCountry) || '<span style="color:var(--color-text-muted)">—</span>'}</td>
       <td class="num">${formatNumber(r.quantity)}</td>
       <td class="num">${formatNumber(r.unitPrice)}</td>
       <td class="currency-cell"><span class="currency-tag ${isForeign ? 'currency-tag--foreign' : 'currency-tag--krw'}">${escHtml(r.currency || 'KRW')}</span></td>
@@ -594,7 +573,7 @@ function renderTable(rows) {
     const isForeign = curr !== 'KRW';
     return `
     <tr>
-      <td colspan="6" style="font-family:var(--font-body);font-size:0.85rem;">${idx === 0 ? '합계' : ''}</td>
+      <td colspan="5" style="font-family:var(--font-body);font-size:0.85rem;">${idx === 0 ? '합계' : ''}</td>
       <td class="num"></td>
       <td class="num"></td>
       <td class="currency-cell"><span class="currency-tag ${isForeign ? 'currency-tag--foreign' : 'currency-tag--krw'}">${escHtml(curr)}</span></td>
@@ -665,14 +644,13 @@ function exportExcel() {
 
   // Sheet 1: 원본
   const sheet1Data = [
-    ['신고번호', '신고일자', '거래처', 'HS코드', '품목명', '적출국', '수량', '단가', '통화', '합계금액'],
+    ['신고번호', '신고일자', '거래처', 'HS코드', '품목명', '수량', '단가', '통화', '합계금액'],
     ...STATE.rows.map(r => [
       r.declNumber,
       r.declDate,
       r.vendor,
       { t: 's', v: r.hsCode },   // 텍스트 강제 (과학적 표기 방지)
       r.itemName,
-      r.originCountry || '',
       r.quantity,
       r.unitPrice,
       r.currency || 'KRW',
@@ -682,27 +660,27 @@ function exportExcel() {
   const ws1 = XLSX.utils.aoa_to_sheet(sheet1Data);
   ws1['!cols'] = [
     { wch: 20 }, { wch: 12 }, { wch: 25 }, { wch: 14 },
-    { wch: 35 }, { wch: 6  }, { wch: 10 }, { wch: 14 }, { wch: 8 }, { wch: 16 },
+    { wch: 35 }, { wch: 10 }, { wch: 14 }, { wch: 8  }, { wch: 16 },
   ];
-  applyNumberFormat(ws1, sheet1Data.length, [6],    '#,##0');
-  applyNumberFormat(ws1, sheet1Data.length, [7, 9], '#,##0.00');
+  applyNumberFormat(ws1, sheet1Data.length, [5],    '#,##0');
+  applyNumberFormat(ws1, sheet1Data.length, [6, 8], '#,##0.00');
   XLSX.utils.book_append_sheet(wb, ws1, '원본');
 
-  // Sheet 2: 신고번호별 (신고번호당 적출국은 첫 품목 기준)
-  const byDecl = groupAndSum(STATE.rows, 'declNumber', ['declDate', 'vendor', 'currency', 'originCountry']);
+  // Sheet 2: 신고번호별 (적출국은 선적국 기준 문서 레벨)
+  const byDecl = groupAndSum(STATE.rows, 'declNumber', ['declDate', 'vendor', 'currency', 'exportCountry']);
   const sheet2Data = [
     ['신고번호', '신고일자', '거래처', '적출국', '통화', '합계금액'],
-    ...byDecl.map(g => [g.key, g.declDate, g.vendor, g.originCountry || '', g.currency || 'KRW', g.sum]),
+    ...byDecl.map(g => [g.key, g.declDate, g.vendor, g.exportCountry || '', g.currency || 'KRW', g.sum]),
   ];
   const ws2 = XLSX.utils.aoa_to_sheet(sheet2Data);
   ws2['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 16 }];
   applyNumberFormat(ws2, sheet2Data.length, [5], '#,##0');
   XLSX.utils.book_append_sheet(wb, ws2, '신고번호별');
 
-  // Sheet 3: 월별 (통화별 + 적출국별)
+  // Sheet 3: 월별 (적출국별 + 통화별)
   const monthMap = new Map();
   for (const r of STATE.rows) {
-    const key = `${r.declMonth || '(없음)'}__${r.currency || 'KRW'}__${r.originCountry || ''}`;
+    const key = `${r.declMonth || '(없음)'}__${r.exportCountry || ''}__${r.currency || 'KRW'}`;
     monthMap.set(key, (monthMap.get(key) || 0) + r.totalAmount);
   }
   const sheet3Data = [
@@ -710,7 +688,7 @@ function exportExcel() {
     ...[...monthMap.entries()]
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([key, total]) => {
-        const [month, curr, country] = key.split('__');
+        const [month, country, curr] = key.split('__');
         return [month, country, curr, total];
       }),
   ];
