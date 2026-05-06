@@ -331,11 +331,25 @@ function extractCurrency(text) {
 }
 
 function extractExportCountry(text) {
-  // 선적국 라벨과 값(HK, SG 등)이 같은 줄 또는 다음 줄에 있을 수 있음
-  // [\s\S]{0,25} 로 줄바꿈 포함 허용
   const COUNTRIES = 'HK|SG|CN|DE|IT|FR|NL|GB|US|JP|TW|BE|CH|AT|SE|ES|VN|TH|MY|ID|PH|IN|AU|NZ|TR|AE|SA|PL|CZ|BD|DK|NO|FI|PT|IE|GR|RU|UA|ZA|BR|MX|CA|EG|MA|QA|KW';
-  const m = text.match(new RegExp(`선\\s*적\\s*국[\\s\\S]{0,25}(${COUNTRIES})\\b`));
-  return m ? m[1] : '';
+
+  // 1. 선적국 라벨 (줄바꿈 포함, 25자 이내)
+  let m = text.match(new RegExp(`선\\s*적\\s*국[\\s\\S]{0,25}(${COUNTRIES})\\b`));
+  if (m) return m[1];
+
+  // 2. 선기명/편명 근처 국가코드 탐색 (예: 선기명 FX6926 ... HK HKGONG)
+  m = text.match(new RegExp(`선기명[\\s\\S]{0,120}(${COUNTRIES})\\s+[A-Z]{3,}`));
+  if (m) return m[1];
+
+  // 3. 공항·항구 코드로 역추적 (HK HKGONG / SG SINGAPORE 등)
+  const PORT_RE = /\b(HK)\s+HKGONG|\b(SG)\s+(?:SINGAPORE|CHANGI)|\b(CN)\s+(?:SHANGHAI|GUANGZHOU|SHENZHEN|BEIJING|TIANJIN)|\b(DE)\s+(?:FRANKFURT|HAMBURG|MUNICH)|\b(NL)\s+(?:AMSTERDAM|ROTTERDAM)|\b(FR)\s+(?:PARIS|PARIS-CDG)|\b(IT)\s+(?:MILAN|ROME|VENICE)|\b(GB)\s+(?:LONDON|HEATHROW|GATWICK)|\b(JP)\s+(?:TOKYO|OSAKA|NARITA|KANSAI)|\b(TW)\s+(?:TAIPEI|TAOYUAN)|\b(TH)\s+(?:BANGKOK|SUVARNABHUMI)|\b(MY)\s+(?:KUALA|KLIA)|\b(VN)\s+(?:HANOI|HOCHIMINH)|\b(AU)\s+(?:SYDNEY|MELBOURNE)/;
+  const pm = text.match(PORT_RE);
+  if (pm) {
+    // 매칭된 그룹 중 첫 번째 non-undefined 반환
+    return pm.slice(1).find(Boolean) || '';
+  }
+
+  return '';
 }
 
 function extractItemName(text) {
@@ -389,6 +403,11 @@ function extractItemLines(text) {
       }
       // (NO. XX) 앵커 기반은 소액도 허용 (부품류: 400원, 214원 등 실제 존재)
       if (unitPrice === 0 && total === 0) continue;
+      // sanity check: qty × unitPrice 와 total 이 10% 이상 차이나면 잘못된 매칭
+      if (qty > 0 && unitPrice > 0 && total > 0) {
+        const expected = qty * unitPrice;
+        if (Math.abs(expected - total) / total > 0.10) continue;
+      }
 
       // 품목 설명 추출
       const amtIdx = chunk.search(itemCurrency ? CONFIG.REGEX.AMOUNT_LINE_WITH_CURR : CONFIG.REGEX.AMOUNT_LINE);
@@ -453,6 +472,9 @@ function extractItemLines(text) {
         total     = parseKoreanNumber(amtMatch[4]);
       }
       if (!lineCurrency && total < 1000) continue;
+      if (qty > 0 && unitPrice > 0 && total > 0) {
+        if (Math.abs(qty * unitPrice - total) / total > 0.10) continue;
+      }
 
       const amtIdx = line.search(lineCurrency ? CONFIG.REGEX.AMOUNT_LINE_WITH_CURR : CONFIG.REGEX.AMOUNT_LINE);
       const itemDesc = amtIdx > 0
