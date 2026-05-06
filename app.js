@@ -234,9 +234,9 @@ function extractFromText(rawText, fileName) {
   const declCurrency    = extractCurrency(rawText);
   const exportCountry   = extractExportCountry(rawText);
   if (!exportCountry) {
-    const idx = rawText.search(/선\s*적\s*국/);
+    const idx = rawText.search(/적\s*출\s*국/);
     if (idx >= 0) console.log(`[적출국-miss] ${fileName}:`, JSON.stringify(rawText.slice(idx, idx + 60)));
-    else          console.log(`[적출국-miss] ${fileName}: "선적국" 텍스트 없음`);
+    else          console.log(`[적출국-miss] ${fileName}: "적출국" 텍스트 없음, 앞500자=`, JSON.stringify(rawText.slice(0, 500)));
   }
   const items = extractItemLines(rawText);
 
@@ -333,21 +333,18 @@ function extractCurrency(text) {
 function extractExportCountry(text) {
   const COUNTRIES = 'HK|SG|CN|DE|IT|FR|NL|GB|US|JP|TW|BE|CH|AT|SE|ES|VN|TH|MY|ID|PH|IN|AU|NZ|TR|AE|SA|PL|CZ|BD|DK|NO|FI|PT|IE|GR|RU|UA|ZA|BR|MX|CA|EG|MA|QA|KW';
 
-  // 1. 선적국 라벨 (줄바꿈 포함, 25자 이내)
-  let m = text.match(new RegExp(`선\\s*적\\s*국[\\s\\S]{0,25}(${COUNTRIES})\\b`));
+  // 1. 적출국 레이블 (줄바꿈 허용 25자)
+  let m = text.match(new RegExp(`적\\s*출\\s*국[\\s\\S]{0,25}(${COUNTRIES})\\b`));
   if (m) return m[1];
 
-  // 2. 선기명/편명 근처 국가코드 탐색 (예: 선기명 FX6926 ... HK HKGONG)
+  // 2. 선기명 근처 탐색 (레이블이 없어도 비행편명 주변에 국가코드 있음)
   m = text.match(new RegExp(`선기명[\\s\\S]{0,120}(${COUNTRIES})\\s+[A-Z]{3,}`));
   if (m) return m[1];
 
-  // 3. 공항·항구 코드로 역추적 (HK HKGONG / SG SINGAPORE 등)
-  const PORT_RE = /\b(HK)\s+HKGONG|\b(SG)\s+(?:SINGAPORE|CHANGI)|\b(CN)\s+(?:SHANGHAI|GUANGZHOU|SHENZHEN|BEIJING|TIANJIN)|\b(DE)\s+(?:FRANKFURT|HAMBURG|MUNICH)|\b(NL)\s+(?:AMSTERDAM|ROTTERDAM)|\b(FR)\s+(?:PARIS|PARIS-CDG)|\b(IT)\s+(?:MILAN|ROME|VENICE)|\b(GB)\s+(?:LONDON|HEATHROW|GATWICK)|\b(JP)\s+(?:TOKYO|OSAKA|NARITA|KANSAI)|\b(TW)\s+(?:TAIPEI|TAOYUAN)|\b(TH)\s+(?:BANGKOK|SUVARNABHUMI)|\b(MY)\s+(?:KUALA|KLIA)|\b(VN)\s+(?:HANOI|HOCHIMINH)|\b(AU)\s+(?:SYDNEY|MELBOURNE)/;
+  // 3. 항구코드 역추적
+  const PORT_RE = /\b(HK)\s+HKGONG|\b(SG)\s+(?:SINGAPORE|CHANGI|WSING)|\b(CN)\s+(?:SHANGHAI|GUANGZHOU|SHENZHEN|BEIJING|TIANJIN)|\b(DE)\s+(?:FRANKFURT|HAMBURG|MUNICH|FRAAU|DEHAM)|\b(NL)\s+(?:AMSTERDAM|ROTTERDAM|EHAM)|\b(FR)\s+(?:PARIS|LFPG)|\b(IT)\s+(?:MILAN|ROME|LIMC)|\b(GB)\s+(?:LONDON|HEATHROW|EGLL)|\b(JP)\s+(?:TOKYO|OSAKA|NARITA|RJTT)|\b(TW)\s+(?:TAIPEI|TAOYUAN|RCTP)/;
   const pm = text.match(PORT_RE);
-  if (pm) {
-    // 매칭된 그룹 중 첫 번째 non-undefined 반환
-    return pm.slice(1).find(Boolean) || '';
-  }
+  if (pm) return pm.slice(1).find(Boolean) || '';
 
   return '';
 }
