@@ -688,35 +688,35 @@ function exportExcel() {
   applyNumberFormat(ws1, sheet1Data.length, [7, 9], '#,##0.00');
   XLSX.utils.book_append_sheet(wb, ws1, '원본');
 
-  // Sheet 2: 신고번호별
-  const byDecl = groupAndSum(STATE.rows, 'declNumber', ['declDate', 'vendor', 'currency']);
+  // Sheet 2: 신고번호별 (신고번호당 적출국은 첫 품목 기준)
+  const byDecl = groupAndSum(STATE.rows, 'declNumber', ['declDate', 'vendor', 'currency', 'originCountry']);
   const sheet2Data = [
-    ['신고번호', '신고일자', '거래처', '통화', '합계금액'],
-    ...byDecl.map(g => [g.key, g.declDate, g.vendor, g.currency || 'KRW', g.sum]),
+    ['신고번호', '신고일자', '거래처', '적출국', '통화', '합계금액'],
+    ...byDecl.map(g => [g.key, g.declDate, g.vendor, g.originCountry || '', g.currency || 'KRW', g.sum]),
   ];
   const ws2 = XLSX.utils.aoa_to_sheet(sheet2Data);
-  ws2['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 25 }, { wch: 8 }, { wch: 16 }];
-  applyNumberFormat(ws2, sheet2Data.length, [4], '#,##0');
+  ws2['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 16 }];
+  applyNumberFormat(ws2, sheet2Data.length, [5], '#,##0');
   XLSX.utils.book_append_sheet(wb, ws2, '신고번호별');
 
-  // Sheet 3: 월별 (통화별)
-  const monthCurrMap = new Map();
+  // Sheet 3: 월별 (통화별 + 적출국별)
+  const monthMap = new Map();
   for (const r of STATE.rows) {
-    const key = `${r.declMonth || '(없음)'}__${r.currency || 'KRW'}`;
-    monthCurrMap.set(key, (monthCurrMap.get(key) || 0) + r.totalAmount);
+    const key = `${r.declMonth || '(없음)'}__${r.currency || 'KRW'}__${r.originCountry || ''}`;
+    monthMap.set(key, (monthMap.get(key) || 0) + r.totalAmount);
   }
   const sheet3Data = [
-    ['월', '통화', '합계금액'],
-    ...[...monthCurrMap.entries()]
+    ['월', '적출국', '통화', '합계금액'],
+    ...[...monthMap.entries()]
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([key, total]) => {
-        const [month, curr] = key.split('__');
-        return [month, curr, total];
+        const [month, curr, country] = key.split('__');
+        return [month, country, curr, total];
       }),
   ];
   const ws3 = XLSX.utils.aoa_to_sheet(sheet3Data);
-  ws3['!cols'] = [{ wch: 10 }, { wch: 8 }, { wch: 16 }];
-  applyNumberFormat(ws3, sheet3Data.length, [2], '#,##0');
+  ws3['!cols'] = [{ wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 16 }];
+  applyNumberFormat(ws3, sheet3Data.length, [3], '#,##0');
   XLSX.utils.book_append_sheet(wb, ws3, '월별');
 
   XLSX.writeFile(wb, CONFIG.EXPORT_FILENAME());
