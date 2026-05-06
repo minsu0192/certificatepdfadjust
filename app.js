@@ -464,9 +464,8 @@ function extractItemLines(text) {
 }
 
 function parseKoreanNumber(str) {
-  // 소수점 포함 금액(예: 76,142.9) 지원 → 반올림하여 정수화
   const n = parseFloat(str.replace(/,/g, ''));
-  return isNaN(n) ? 0 : Math.round(n);
+  return isNaN(n) ? 0 : n;
 }
 
 /* ── PROCESSING ORCHESTRATOR ─────────────────────────────────── */
@@ -661,7 +660,8 @@ function exportExcel() {
     { wch: 20 }, { wch: 12 }, { wch: 25 }, { wch: 14 },
     { wch: 35 }, { wch: 10 }, { wch: 14 }, { wch: 8 }, { wch: 16 },
   ];
-  applyNumberFormat(ws1, sheet1Data.length, [5, 6, 8], '#,##0');
+  applyNumberFormat(ws1, sheet1Data.length, [5],    '#,##0');
+  applyNumberFormat(ws1, sheet1Data.length, [6, 8], '#,##0.00');
   XLSX.utils.book_append_sheet(wb, ws1, '원본');
 
   // Sheet 2: 신고번호별
