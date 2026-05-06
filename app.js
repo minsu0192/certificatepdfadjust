@@ -353,12 +353,15 @@ async function processFiles(files) {
   showSection('actionBar', false);
   showSection('tableSection', false);
 
+  let firstPdfText = null;
+
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
     setProgress(i, files.length, `처리 중 (${i + 1}/${files.length}): ${file.name}`);
 
     try {
       const text = await parsePdf(file);
+      if (i === 0) firstPdfText = text;
       const { rows, warns } = extractFromText(text, file.name);
       STATE.rows.push(...rows);
       STATE.warnings.push(...warns);
@@ -368,6 +371,14 @@ async function processFiles(files) {
 
     // 브라우저 렌더링에 양보
     await new Promise(r => setTimeout(r, 0));
+  }
+
+  // 추출 실패 시 디버그 패널 표시
+  if (STATE.rows.length === 0 && firstPdfText) {
+    const debugPanel = document.getElementById('debugPanel');
+    document.getElementById('debugText').value = firstPdfText.slice(0, 3000);
+    debugPanel.hidden = false;
+    debugPanel.open = true;
   }
 
   setProgress(files.length, files.length, `완료: ${files.length}개 파일 처리됨`);
@@ -563,4 +574,8 @@ function resetApp() {
   showSection('warningsDetails', false);
 
   document.getElementById('dropZone').classList.remove('drop-zone--loading', 'drop-zone--active', 'drop-zone--hover');
+  const debugPanel = document.getElementById('debugPanel');
+  debugPanel.hidden = true;
+  debugPanel.open = false;
+  document.getElementById('debugText').value = '';
 }
