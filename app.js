@@ -218,7 +218,7 @@ function extractFromText(rawText, fileName) {
     return { rows, warns };
   }
 
-  const declNumber = firstMatch[1];
+  const declNumber = firstMatch[1].replace(/-/g, '');
   const declDate   = extractDeclarationDate(rawText);
   const declMonth  = declDate ? declDate.slice(0, 7) : '';
   const vendor     = extractVendor(rawText);
