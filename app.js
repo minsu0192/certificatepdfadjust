@@ -333,18 +333,41 @@ function extractCurrency(text) {
 function extractExportCountry(text) {
   const COUNTRIES = 'HK|SG|CN|DE|IT|FR|NL|GB|US|JP|TW|BE|CH|AT|SE|ES|VN|TH|MY|ID|PH|IN|AU|NZ|TR|AE|SA|PL|CZ|BD|DK|NO|FI|PT|IE|GR|RU|UA|ZA|BR|MX|CA|EG|MA|QA|KW';
 
-  // 1. 적출국 레이블 (줄바꿈 허용 25자)
-  let m = text.match(new RegExp(`적\\s*출\\s*국[\\s\\S]{0,25}(${COUNTRIES})\\b`));
+  // 1. 적출국 레이블 (줄바꿈 허용, 최대 40자)
+  let m = text.match(new RegExp(`적\\s*출\\s*국[\\s\\S]{0,40}?(${COUNTRIES})(?=[\\s\\r\\n]|$)`));
   if (m) return m[1];
 
-  // 2. 선기명 근처 탐색 (레이블이 없어도 비행편명 주변에 국가코드 있음)
-  m = text.match(new RegExp(`선기명[\\s\\S]{0,120}(${COUNTRIES})\\s+[A-Z]{3,}`));
+  // 2. 적재항 UN/LOCODE 값: "XX YYY" 형식 — 레이블이 이미지여도 값은 텍스트로 추출됨
+  //    예: HK HKG, SG SIN, CN SHA, DE FRA, NL RTM
+  m = text.match(new RegExp(`적\\s*재\\s*항[\\s\\S]{0,50}?(${COUNTRIES})\\s+[A-Z]{3}\\b`));
   if (m) return m[1];
 
-  // 3. 항구코드 역추적
-  const PORT_RE = /\b(HK)\s+HKGONG|\b(SG)\s+(?:SINGAPORE|CHANGI|WSING)|\b(CN)\s+(?:SHANGHAI|GUANGZHOU|SHENZHEN|BEIJING|TIANJIN)|\b(DE)\s+(?:FRANKFURT|HAMBURG|MUNICH|FRAAU|DEHAM)|\b(NL)\s+(?:AMSTERDAM|ROTTERDAM|EHAM)|\b(FR)\s+(?:PARIS|LFPG)|\b(IT)\s+(?:MILAN|ROME|LIMC)|\b(GB)\s+(?:LONDON|HEATHROW|EGLL)|\b(JP)\s+(?:TOKYO|OSAKA|NARITA|RJTT)|\b(TW)\s+(?:TAIPEI|TAOYUAN|RCTP)/;
-  const pm = text.match(PORT_RE);
-  if (pm) return pm.slice(1).find(Boolean) || '';
+  // 3. 선기명 앞쪽에 있는 적재항 UN/LOCODE (레이블 없이 값만 있는 경우)
+  //    선기명 앞 120자에서 "XX YYY" 패턴 탐색
+  m = text.match(new RegExp(`([\\s\\S]{0,120})선기명`));
+  if (m) {
+    const before = m[1];
+    const lc = before.match(new RegExp(`(${COUNTRIES})\\s+[A-Z]{3}\\b`));
+    if (lc) return lc[1];
+  }
+
+  // 4. 선기명 뒤 UN/LOCODE 또는 출발지 국가코드
+  m = text.match(new RegExp(`선기명[\\s\\S]{0,150}?(${COUNTRIES})\\s+[A-Z]{2,4}\\b`));
+  if (m) return m[1];
+
+  // 5. UN/LOCODE 항구코드 역추적 (이름 → 국가코드)
+  const PORT_MAP = [
+    [/\bHK\s+HKG\b/,  'HK'], [/\bSG\s+SIN\b/,   'SG'], [/\bCN\s+SHA\b/,  'CN'],
+    [/\bCN\s+PEK\b/,  'CN'], [/\bCN\s+CAN\b/,   'CN'], [/\bCN\s+SZX\b/,  'CN'],
+    [/\bDE\s+FRA\b/,  'DE'], [/\bDE\s+HAM\b/,   'DE'], [/\bNL\s+RTM\b/,  'NL'],
+    [/\bFR\s+CDG\b/,  'FR'], [/\bIT\s+MXP\b/,   'IT'], [/\bIT\s+FCO\b/,  'IT'],
+    [/\bGB\s+LHR\b/,  'GB'], [/\bJP\s+NRT\b/,   'JP'], [/\bJP\s+KIX\b/,  'JP'],
+    [/\bTW\s+TPE\b/,  'TW'], [/\bUS\s+LAX\b/,   'US'], [/\bUS\s+JFK\b/,  'US'],
+    [/\bBE\s+BRU\b/,  'BE'], [/\bCH\s+ZRH\b/,   'CH'], [/\bAT\s+VIE\b/,  'AT'],
+  ];
+  for (const [re, cc] of PORT_MAP) {
+    if (re.test(text)) return cc;
+  }
 
   return '';
 }
