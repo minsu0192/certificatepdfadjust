@@ -421,6 +421,22 @@ body {
   font-size: 0.85rem;
 }
 
+/* ── Country / Currency Columns ─────────────────────────────── */
+.results-table th.country-col {
+  text-align: center;
+  width: 52px;
+}
+
+.results-table td.country-cell {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
 /* ── Currency Column ────────────────────────────────────────── */
 .results-table th.currency-col {
   text-align: center;

@@ -256,7 +256,8 @@ function extractFromText(rawText, fileName) {
       quantity:    item.quantity,
       unitPrice:   item.unitPrice,
       totalAmount: item.totalAmount,
-      currency:    item.currency || declCurrency,
+      currency:      item.currency || declCurrency,
+      originCountry: item.originCountry || '',
     });
   }
 
@@ -402,20 +403,31 @@ function extractItemLines(text) {
         }
       }
 
-      // HS코드: 금액 이후 800자 내 세번부호 탐색
+      // HS코드 + 적출국: 금액 이후 800자 내 탐색
       const afterStart = chunkStart + amtIdx + amtMatch[0].length;
       const afterChunk = text.slice(afterStart, afterStart + 800);
       let hsCode = '';
       const seobunM = afterChunk.match(CONFIG.REGEX.HS_SEOBUN);
       if (seobunM) hsCode = seobunM[1].replace(/[.\-]/g, '').slice(0, 10);
 
+      // 적출국: 원산지 코드 앞 2자리 (예: HK-B-Y-8 → HK, CN-4-E-04 → CN)
+      let originCountry = '';
+      const origM = afterChunk.match(/적\s*출\s*국\s+([A-Z]{2})/);
+      if (origM) {
+        originCountry = origM[1];
+      } else {
+        const wsanM = afterChunk.match(/원\s*산\s*지\s+(([A-Z]{2})[\w.-]*)/);
+        if (wsanM) originCountry = wsanM[2];
+      }
+
       items.push({
         hsCode,
-        itemName:    itemDesc || globalItemName,
-        quantity:    qty,
+        itemName:      itemDesc || globalItemName,
+        quantity:      qty,
         unitPrice,
-        totalAmount: total,
-        currency:    itemCurrency,
+        totalAmount:   total,
+        currency:      itemCurrency,
+        originCountry,
       });
     }
   }
@@ -451,12 +463,22 @@ function extractItemLines(text) {
         : '';
 
       let hsCode = '';
+      let originCountry = '';
       for (let k = i + 1; k < Math.min(i + 25, lines.length); k++) {
-        const seobunM = lines[k].match(CONFIG.REGEX.HS_SEOBUN);
-        if (seobunM) { hsCode = seobunM[1].replace(/[.\-]/g, '').slice(0, 10); break; }
+        if (!hsCode) {
+          const seobunM = lines[k].match(CONFIG.REGEX.HS_SEOBUN);
+          if (seobunM) hsCode = seobunM[1].replace(/[.\-]/g, '').slice(0, 10);
+        }
+        if (!originCountry) {
+          const origM = lines[k].match(/적\s*출\s*국\s+([A-Z]{2})/);
+          if (origM) { originCountry = origM[1]; continue; }
+          const wsanM = lines[k].match(/원\s*산\s*지\s+(([A-Z]{2})[\w.-]*)/);
+          if (wsanM) originCountry = wsanM[2];
+        }
+        if (hsCode && originCountry) break;
       }
 
-      items.push({ hsCode, itemName: itemDesc || globalItemName, quantity: qty, unitPrice, totalAmount: total, currency: lineCurrency });
+      items.push({ hsCode, itemName: itemDesc || globalItemName, quantity: qty, unitPrice, totalAmount: total, currency: lineCurrency, originCountry });
     }
   }
 
@@ -538,7 +560,7 @@ function renderTable(rows) {
   const tfoot = document.getElementById('resultsFoot');
 
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--color-text-muted);padding:24px;">추출된 데이터가 없습니다</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--color-text-muted);padding:24px;">추출된 데이터가 없습니다</td></tr>';
     tfoot.innerHTML = '';
     return;
   }
@@ -552,6 +574,7 @@ function renderTable(rows) {
       <td>${escHtml(r.vendor)}</td>
       <td class="code">${escHtml(r.hsCode)}</td>
       <td>${escHtml(r.itemName)}</td>
+      <td class="country-cell">${escHtml(r.originCountry) || '<span style="color:var(--color-text-muted)">—</span>'}</td>
       <td class="num">${formatNumber(r.quantity)}</td>
       <td class="num">${formatNumber(r.unitPrice)}</td>
       <td class="currency-cell"><span class="currency-tag ${isForeign ? 'currency-tag--foreign' : 'currency-tag--krw'}">${escHtml(r.currency || 'KRW')}</span></td>
@@ -571,7 +594,7 @@ function renderTable(rows) {
     const isForeign = curr !== 'KRW';
     return `
     <tr>
-      <td colspan="5" style="font-family:var(--font-body);font-size:0.85rem;">${idx === 0 ? '합계' : ''}</td>
+      <td colspan="6" style="font-family:var(--font-body);font-size:0.85rem;">${idx === 0 ? '합계' : ''}</td>
       <td class="num"></td>
       <td class="num"></td>
       <td class="currency-cell"><span class="currency-tag ${isForeign ? 'currency-tag--foreign' : 'currency-tag--krw'}">${escHtml(curr)}</span></td>
@@ -642,13 +665,14 @@ function exportExcel() {
 
   // Sheet 1: 원본
   const sheet1Data = [
-    ['신고번호', '신고일자', '거래처', 'HS코드', '품목명', '수량', '단가', '통화', '합계금액'],
+    ['신고번호', '신고일자', '거래처', 'HS코드', '품목명', '적출국', '수량', '단가', '통화', '합계금액'],
     ...STATE.rows.map(r => [
       r.declNumber,
       r.declDate,
       r.vendor,
       { t: 's', v: r.hsCode },   // 텍스트 강제 (과학적 표기 방지)
       r.itemName,
+      r.originCountry || '',
       r.quantity,
       r.unitPrice,
       r.currency || 'KRW',
@@ -658,10 +682,10 @@ function exportExcel() {
   const ws1 = XLSX.utils.aoa_to_sheet(sheet1Data);
   ws1['!cols'] = [
     { wch: 20 }, { wch: 12 }, { wch: 25 }, { wch: 14 },
-    { wch: 35 }, { wch: 10 }, { wch: 14 }, { wch: 8 }, { wch: 16 },
+    { wch: 35 }, { wch: 6  }, { wch: 10 }, { wch: 14 }, { wch: 8 }, { wch: 16 },
   ];
-  applyNumberFormat(ws1, sheet1Data.length, [5],    '#,##0');
-  applyNumberFormat(ws1, sheet1Data.length, [6, 8], '#,##0.00');
+  applyNumberFormat(ws1, sheet1Data.length, [6],    '#,##0');
+  applyNumberFormat(ws1, sheet1Data.length, [7, 9], '#,##0.00');
   XLSX.utils.book_append_sheet(wb, ws1, '원본');
 
   // Sheet 2: 신고번호별
