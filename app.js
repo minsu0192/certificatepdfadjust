@@ -208,50 +208,37 @@ function extractFromText(rawText, fileName) {
   const rows  = [];
   const warns = [];
 
-  const allMatches = [...rawText.matchAll(CONFIG.REGEX.DECL_NUMBER)];
-
-  if (allMatches.length === 0) {
+  // PDF 1개 = 신고서 1개: 본문에 등장하는 첫 번째 신고번호만 사용
+  // (바닥글·참조 번호 중복 방지)
+  const firstMatch = rawText.match(/(\d{5}-\d{2}-\d+[A-Z]?)/);
+  if (!firstMatch) {
     warns.push(`${fileName}: 신고번호를 찾을 수 없음`);
     return { rows, warns };
   }
 
-  // 신고번호 중복 제거: 동일 번호가 머리글·바닥글에 반복 등장하므로 첫 출현만 사용
-  const seen = new Set();
-  const uniqueMatches = allMatches.filter(m => {
-    if (seen.has(m[1])) return false;
-    seen.add(m[1]);
-    return true;
-  });
+  const declNumber = firstMatch[1];
+  const declDate   = extractDeclarationDate(rawText);
+  const declMonth  = declDate ? declDate.slice(0, 7) : '';
+  const vendor     = extractVendor(rawText);
+  const items      = extractItemLines(rawText);
 
-  const sections = uniqueMatches.map((m, idx) => ({
-    declNumber: m[1],
-    text: rawText.slice(m.index, uniqueMatches[idx + 1]?.index ?? rawText.length),
-  }));
+  if (items.length === 0) {
+    warns.push(`${fileName} / ${declNumber}: 품목 라인을 찾을 수 없음`);
+  }
 
-  for (const section of sections) {
-    const declDate  = extractDeclarationDate(section.text);
-    const declMonth = declDate ? declDate.slice(0, 7) : '';
-    const vendor    = extractVendor(section.text);
-    const items     = extractItemLines(section.text);
-
-    if (items.length === 0) {
-      warns.push(`${fileName} / ${section.declNumber}: 품목 라인을 찾을 수 없음`);
-    }
-
-    for (const item of items) {
-      rows.push({
-        fileName,
-        declNumber:  section.declNumber,
-        declDate,
-        declMonth,
-        vendor,
-        hsCode:      item.hsCode,
-        itemName:    item.itemName,
-        quantity:    item.quantity,
-        unitPrice:   item.unitPrice,
-        totalAmount: item.totalAmount,
-      });
-    }
+  for (const item of items) {
+    rows.push({
+      fileName,
+      declNumber,
+      declDate,
+      declMonth,
+      vendor,
+      hsCode:      item.hsCode,
+      itemName:    item.itemName,
+      quantity:    item.quantity,
+      unitPrice:   item.unitPrice,
+      totalAmount: item.totalAmount,
+    });
   }
 
   return { rows, warns };
@@ -311,60 +298,81 @@ function extractItemName(text) {
 
 function extractItemLines(text) {
   const items = [];
-  const lines = text.split(/\n|\r\n?/);
-
-  // 전역 품목명 (필드 30/31) — 단일 품목 신고 시 사용
   const globalItemName = extractItemName(text);
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
+  // UNI-PASS는 각 품목 앞에 (NO. 01) (NO. 02) ... 마커를 둠.
+  // 라인 분리 없이 원문에서 직접 청크를 잘라 파싱 → Y좌표 오정렬 문제 우회.
+  const noMatches = [...text.matchAll(/\(NO\.\s*\d+\)/gi)];
 
-    // 환급물량, 세액 합계 등 가짜 EA 라인 제외
-    if (CONFIG.REGEX.SKIP_LINE.test(line)) continue;
+  if (noMatches.length > 0) {
+    for (const noMatch of noMatches) {
+      // (NO. XX) 이후 600자 안에서 금액 패턴 탐색
+      const chunkStart = noMatch.index + noMatch[0].length;
+      const chunk = text.slice(chunkStart, chunkStart + 600);
 
-    const amtMatch = line.match(CONFIG.REGEX.AMOUNT_LINE);
-    if (!amtMatch) continue;
+      const amtMatch = chunk.match(CONFIG.REGEX.AMOUNT_LINE);
+      if (!amtMatch) continue;
 
-    const qty       = parseKoreanNumber(amtMatch[1]);
-    const unitPrice = parseKoreanNumber(amtMatch[3]);
-    const total     = parseKoreanNumber(amtMatch[4]);
+      const qty       = parseKoreanNumber(amtMatch[1]);
+      const unitPrice = parseKoreanNumber(amtMatch[3]);
+      const total     = parseKoreanNumber(amtMatch[4]);
+      if (total < 1000) continue;
 
-    // 실제 품목 금액은 최소 1,000원 이상 (환급물량 등 필드값 걸러냄)
-    if (total < 1000) continue;
-
-    // 같은 줄에서 품목 설명 추출: 수량 앞 텍스트 → 카탈로그 번호 제거
-    const amtIdx = line.search(/\d[\d,]*\s+(EA|KG|MT|PC|SET|BOX|CTN|PCS)/i);
-    let itemDesc = '';
-    if (amtIdx > 0) {
-      itemDesc = line.slice(0, amtIdx)
-        .replace(/^[\d.\s]+/, '')  // 앞에 붙은 카탈로그/랏 번호 제거 (예: 973.90.04.2.0.0)
-        .trim();
-    }
-
-    // HS코드(세번부호): UNI-PASS는 금액 라인 아래에 위치 → 앞으로 탐색
-    let hsCode = '';
-    for (let j = i + 1; j < Math.min(i + 25, lines.length); j++) {
-      const seobunM = lines[j].match(CONFIG.REGEX.HS_SEOBUN);
-      if (seobunM) {
-        hsCode = seobunM[1].replace(/[.\-]/g, '').slice(0, 10);
-        break;
+      // 품목 설명: 수량 앞 텍스트 (줄바꿈 제거 후 카탈로그 번호 정리)
+      const amtIdx = chunk.search(CONFIG.REGEX.AMOUNT_LINE);
+      let itemDesc = '';
+      if (amtIdx > 0) {
+        itemDesc = chunk.slice(0, amtIdx)
+          .replace(/[\n\r]+/g, ' ')
+          .replace(/^[\d.\s]+/, '')
+          .trim();
       }
-      // XXXX.XX-XXXX 형식이 세번부호 문맥에서 등장
-      const hsM = lines[j].match(CONFIG.REGEX.HS_CODE_FORMATTED);
-      if (hsM && /3\s*8|세번/.test(lines[j])) {
-        hsCode = hsM[1].replace(/[.\-]/g, '').slice(0, 10);
-        break;
-      }
-    }
 
-    items.push({
-      hsCode,
-      itemName:    itemDesc || globalItemName,
-      quantity:    qty,
-      unitPrice,
-      totalAmount: total,
-    });
+      // HS코드: 금액 이후 800자 내 세번부호 탐색
+      const afterStart = chunkStart + amtIdx + amtMatch[0].length;
+      const afterChunk = text.slice(afterStart, afterStart + 800);
+      let hsCode = '';
+      const seobunM = afterChunk.match(CONFIG.REGEX.HS_SEOBUN);
+      if (seobunM) hsCode = seobunM[1].replace(/[.\-]/g, '').slice(0, 10);
+
+      items.push({
+        hsCode,
+        itemName:    itemDesc || globalItemName,
+        quantity:    qty,
+        unitPrice,
+        totalAmount: total,
+      });
+    }
+  }
+
+  // (NO. XX) 마커가 없는 비표준 형식 폴백: 줄별 파싱
+  if (items.length === 0) {
+    const lines = text.split(/\n|\r\n?/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line || CONFIG.REGEX.SKIP_LINE.test(line)) continue;
+
+      const amtMatch = line.match(CONFIG.REGEX.AMOUNT_LINE);
+      if (!amtMatch) continue;
+
+      const qty       = parseKoreanNumber(amtMatch[1]);
+      const unitPrice = parseKoreanNumber(amtMatch[3]);
+      const total     = parseKoreanNumber(amtMatch[4]);
+      if (total < 1000) continue;
+
+      const amtIdx = line.search(CONFIG.REGEX.AMOUNT_LINE);
+      const itemDesc = amtIdx > 0
+        ? line.slice(0, amtIdx).replace(/^[\d.\s]+/, '').trim()
+        : '';
+
+      let hsCode = '';
+      for (let k = i + 1; k < Math.min(i + 25, lines.length); k++) {
+        const seobunM = lines[k].match(CONFIG.REGEX.HS_SEOBUN);
+        if (seobunM) { hsCode = seobunM[1].replace(/[.\-]/g, '').slice(0, 10); break; }
+      }
+
+      items.push({ hsCode, itemName: itemDesc || globalItemName, quantity: qty, unitPrice, totalAmount: total });
+    }
   }
 
   return items;
@@ -389,7 +397,8 @@ async function processFiles(files) {
   showSection('actionBar',       false);
   showSection('tableSection',    false);
 
-  let firstPdfText = null;
+  let firstFailingText = null;
+  let firstFailingName = '';
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
@@ -397,10 +406,14 @@ async function processFiles(files) {
 
     try {
       const text = await parsePdf(file);
-      if (i === 0) firstPdfText = text;
       const { rows, warns } = extractFromText(text, file.name);
       STATE.rows.push(...rows);
       STATE.warnings.push(...warns);
+      // 품목 라인을 못 찾은 파일의 텍스트 저장 (디버그용)
+      if (rows.length === 0 && !firstFailingText) {
+        firstFailingText = text;
+        firstFailingName = file.name;
+      }
     } catch (err) {
       STATE.warnings.push(`${file.name}: 파싱 오류 — ${err.message}`);
     }
@@ -408,10 +421,12 @@ async function processFiles(files) {
     await new Promise(r => setTimeout(r, 0));
   }
 
-  // 추출 실패 시 디버그 패널 표시
-  if (STATE.rows.length === 0 && firstPdfText) {
+  // 실패한 파일이 있으면 디버그 패널 표시
+  if (firstFailingText) {
     const debugPanel = document.getElementById('debugPanel');
-    document.getElementById('debugText').value = firstPdfText.slice(0, 3000);
+    const summary = document.querySelector('#debugPanel > summary');
+    if (summary) summary.textContent = `🔍 파싱 실패 파일 원문: ${firstFailingName}`;
+    document.getElementById('debugText').value = firstFailingText.slice(0, 4000);
     debugPanel.hidden = false;
     debugPanel.open   = true;
   }
