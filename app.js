@@ -16,8 +16,10 @@ const CONFIG = {
     HS_SEOBUN: /세번부호\s+([\d.]+[-][\d]+)/,
     HS_CODE_FORMATTED: /(\d{4}\.\d{2}-\d{4})/,
 
-    // 금액 라인: 수량 단위 단가 합계 (UNI-PASS: "2 EA   1,454,727   2,909,454")
-    AMOUNT_LINE: /([\d,]+)\s+(EA|KG|MT|PC|SET|BOX|CTN|PCS|L|G|TON|M|개|매|본|장|식|롤)\s+([\d,]+)\s+([\d,]+)/i,
+    // 금액 라인: 수량 단위 단가 합계
+    // 단위: UNI-PASS 표준 전체 포함 (ST=piece, RO=roll, PR=pair 등)
+    // 금액: 소수점 허용 (예: 7,614.29 / 76,142.9)
+    AMOUNT_LINE: /([\d,]+)\s+(EA|KG|MT|PC|SET|BOX|CTN|PCS|ST|RO|NO|PR|PKG|BT|DZ|M2|M3|L|G|TON|M|개|매|본|장|식|롤)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)/i,
 
     // 가짜 금액 라인 필터: 이 키워드가 있는 줄은 제외
     SKIP_LINE: /환급물량|세관기재란|신고인기재란|납부번호|총세액합계|부가가치세과표/,
@@ -285,13 +287,20 @@ function extractVendor(text) {
 }
 
 function extractItemName(text) {
-  // 필드 31 (거래품명) 우선
-  const m31 = text.match(/3\s*1\s+([A-Z][A-Z0-9 ]{2,}?)(?=\s{3,}|\n|거래품명)/);
-  if (m31) return m31[1].trim();
+  // 새 형식: "3 1   거래품명   ITEM NAME" (소모품·부품류)
+  const m31new = text.match(/3\s*1\s+거래품명\s+([^\n\r]+)/);
+  if (m31new) return m31new[1].trim();
 
-  // 필드 30 (품명)
-  const m30 = text.match(/3\s*0\s+([A-Z][A-Z0-9 ]{2,}?)(?=\s{3,}|\n)/);
+  // 구 형식: "3 1   ITEM NAME" → 다음 줄에 "거래품명" (완제품류)
+  const m31old = text.match(/3\s*1\s+([A-Z][A-Z0-9 ]{2,}?)(?=\s{3,}|\n|거래품명)/);
+  if (m31old) return m31old[1].trim();
+
+  // 필드 30: 품명 (상표 레이블 앞까지만)
+  const m30 = text.match(/3\s*0\s+품\s*명\s+([A-Z][^\n\r]+?)(?=\s{3,}|상표|\n)/);
   if (m30) return m30[1].trim();
+
+  const m30b = text.match(/3\s*0\s+([A-Z][A-Z0-9 ]{2,}?)(?=\s{3,}|\n)/);
+  if (m30b) return m30b[1].trim();
 
   return '';
 }
@@ -316,16 +325,28 @@ function extractItemLines(text) {
       const qty       = parseKoreanNumber(amtMatch[1]);
       const unitPrice = parseKoreanNumber(amtMatch[3]);
       const total     = parseKoreanNumber(amtMatch[4]);
-      if (total < 1000) continue;
+      // (NO. XX) 앵커 기반은 소액도 허용 (부품류: 400원, 214원 등 실제 존재)
+      if (unitPrice === 0 && total === 0) continue;
 
-      // 품목 설명: 수량 앞 텍스트 (줄바꿈 제거 후 카탈로그 번호 정리)
+      // 품목 설명 추출
       const amtIdx = chunk.search(CONFIG.REGEX.AMOUNT_LINE);
       let itemDesc = '';
       if (amtIdx > 0) {
-        itemDesc = chunk.slice(0, amtIdx)
-          .replace(/[\n\r]+/g, ' ')
-          .replace(/^[\d.\s]+/, '')
+        // 수량 앞 텍스트: 줄바꿈 제거 후 앞의 품목코드(숫자)·국가코드(2자리 대문자) 정리
+        const beforeAmt = chunk.slice(0, amtIdx).replace(/[\n\r]+/g, ' ').trim();
+        const cleaned = beforeAmt
+          .replace(/^\d+\s*/, '')          // 앞 품목코드 제거
+          .replace(/\s+[A-Z]{2}\s*$/, '')  // 뒤 국가코드(DE, CZ 등) 제거
           .trim();
+        if (cleaned.length >= 2) {
+          itemDesc = cleaned;
+        } else {
+          // Format B: 설명이 금액 라인 다음 줄에 있음
+          const afterAmt = chunk.slice(amtIdx + amtMatch[0].length, amtIdx + amtMatch[0].length + 120);
+          const nextLine = afterAmt.split(/\n/)[1] || '';
+          const nextCleaned = nextLine.replace(/^\d+\s*/, '').trim();
+          if (nextCleaned.length >= 2) itemDesc = nextCleaned;
+        }
       }
 
       // HS코드: 금액 이후 800자 내 세번부호 탐색
@@ -379,7 +400,9 @@ function extractItemLines(text) {
 }
 
 function parseKoreanNumber(str) {
-  return parseInt(str.replace(/,/g, ''), 10) || 0;
+  // 소수점 포함 금액(예: 76,142.9) 지원 → 반올림하여 정수화
+  const n = parseFloat(str.replace(/,/g, ''));
+  return isNaN(n) ? 0 : Math.round(n);
 }
 
 /* ── PROCESSING ORCHESTRATOR ─────────────────────────────────── */
