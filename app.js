@@ -232,6 +232,12 @@ function extractFromText(rawText, fileName) {
   const declMonth  = declDate ? declDate.slice(0, 7) : '';
   const vendor     = extractVendor(rawText);
   const declCurrency = extractCurrency(rawText);
+  // 디버그: 통화 감지 결과 및 헤더 텍스트 콘솔 출력
+  console.log(`[currency] ${fileName}: ${declCurrency}`);
+  if (declCurrency === 'KRW') {
+    // KRW로 감지된 경우 앞 3000자를 출력해서 실제 통화 코드 위치 확인
+    console.log(`[currency-debug] ${fileName} header:`, rawText.slice(0, 3000));
+  }
   const items      = extractItemLines(rawText);
 
   if (items.length === 0) {
@@ -298,17 +304,29 @@ function extractVendor(text) {
 }
 
 function extractCurrency(text) {
-  // 결제금액 USD 형식 (갑지 헤더)
-  const m1 = text.match(/결제금액\s+([A-Z]{3})/);
-  if (m1 && FOREIGN_CURRENCIES.has(m1[1])) return m1[1];
+  const CURR = 'USD|EUR|JPY|GBP|CNY|CHF|HKD|SGD|AUD|CAD|NZD|SEK|NOK|DKK|MYR|THB|INR|VND|IDR|PHP|BRL|RUB|TWD|KWD|SAR|AED|TRY';
 
-  // 통화 코드 필드
-  const m2 = text.match(/\b통화\s*[:：]?\s*([A-Z]{3})\b/);
-  if (m2 && FOREIGN_CURRENCIES.has(m2[1])) return m2[1];
+  // 결제금액 필드: 스페이스 삽입·개행 모두 허용 (결 제 금 액   \n  USD)
+  let m = text.match(new RegExp(`결\\s*제\\s*금\\s*액[\\s\\S]{0,40}(${CURR})`));
+  if (m && FOREIGN_CURRENCIES.has(m[1])) return m[1];
+
+  // 통화 필드 (개행 허용)
+  m = text.match(new RegExp(`통\\s*화[\\s\\S]{0,20}(${CURR})`));
+  if (m && FOREIGN_CURRENCIES.has(m[1])) return m[1];
+
+  // 가격조건: CIF USD / FOB EUR 등
+  m = text.match(new RegExp(`(?:CIF|FOB|CFR|CPT|DAP|DDP|EXW)[\\s\\S]{0,15}(${CURR})`));
+  if (m && FOREIGN_CURRENCIES.has(m[1])) return m[1];
 
   // 외화금액 필드
-  const m3 = text.match(/외화금액\s+([A-Z]{3})/);
-  if (m3 && FOREIGN_CURRENCIES.has(m3[1])) return m3[1];
+  m = text.match(new RegExp(`외\\s*화\\s*금\\s*액[\\s\\S]{0,30}(${CURR})`));
+  if (m && FOREIGN_CURRENCIES.has(m[1])) return m[1];
+
+  // 폭넓은 폴백: 문서 앞 3000자(헤더) 내 단독 외화 코드
+  // 신고필증 헤더에는 결제금액·가격조건 등이 존재하므로 통화 코드가 반드시 등장
+  const header = text.slice(0, 3000);
+  m = header.match(new RegExp(`\\b(${CURR})\\b`));
+  if (m && FOREIGN_CURRENCIES.has(m[1])) return m[1];
 
   return 'KRW';
 }
@@ -427,7 +445,7 @@ function extractItemLines(text) {
         unitPrice = parseKoreanNumber(amtMatch[3]);
         total     = parseKoreanNumber(amtMatch[4]);
       }
-      if (total < 1000) continue;
+      if (!lineCurrency && total < 1000) continue;
 
       const amtIdx = line.search(lineCurrency ? CONFIG.REGEX.AMOUNT_LINE_WITH_CURR : CONFIG.REGEX.AMOUNT_LINE);
       const itemDesc = amtIdx > 0
