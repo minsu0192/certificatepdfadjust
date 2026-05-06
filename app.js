@@ -233,6 +233,11 @@ function extractFromText(rawText, fileName) {
   const vendor          = extractVendor(rawText);
   const declCurrency    = extractCurrency(rawText);
   const exportCountry   = extractExportCountry(rawText);
+  if (!exportCountry) {
+    const idx = rawText.search(/선\s*적\s*국/);
+    if (idx >= 0) console.log(`[적출국-miss] ${fileName}:`, JSON.stringify(rawText.slice(idx, idx + 60)));
+    else          console.log(`[적출국-miss] ${fileName}: "선적국" 텍스트 없음`);
+  }
   const items = extractItemLines(rawText);
 
   if (items.length === 0) {
@@ -326,8 +331,10 @@ function extractCurrency(text) {
 }
 
 function extractExportCountry(text) {
-  // 갑지 선적국 필드: "선적국 HK HKGONG" → HK, "선적국 SG" → SG
-  const m = text.match(/선\s*적\s*국\s+([A-Z]{2})\b/);
+  // 선적국 라벨과 값(HK, SG 등)이 같은 줄 또는 다음 줄에 있을 수 있음
+  // [\s\S]{0,25} 로 줄바꿈 포함 허용
+  const COUNTRIES = 'HK|SG|CN|DE|IT|FR|NL|GB|US|JP|TW|BE|CH|AT|SE|ES|VN|TH|MY|ID|PH|IN|AU|NZ|TR|AE|SA|PL|CZ|BD|DK|NO|FI|PT|IE|GR|RU|UA|ZA|BR|MX|CA|EG|MA|QA|KW';
+  const m = text.match(new RegExp(`선\\s*적\\s*국[\\s\\S]{0,25}(${COUNTRIES})\\b`));
   return m ? m[1] : '';
 }
 
