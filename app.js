@@ -17,12 +17,12 @@ const CONFIG = {
     HS_CODE_FORMATTED: /(\d{4}\.\d{2}-\d{4})/,
 
     // 금액 라인: 수량 단위 단가 합계
-    // 단위: UNI-PASS 표준 전체 포함 (ST=piece, RO=roll, PR=pair 등)
+    // 단위: UNI-PASS 표준 전체 포함 (ST=piece, RO=roll, PR=pair, CT=carton, CA=case 등)
     // 금액: 소수점 허용 (예: 7,614.29 / 76,142.9)
-    AMOUNT_LINE: /([\d,]+)\s+(EA|KG|MT|PC|SET|BOX|CTN|PCS|CS|ST|RO|NO|PR|PKG|BT|DZ|M2|M3|L|G|TON|M|PL|BL|RL|GL|개|매|본|장|식|롤)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)/i,
+    AMOUNT_LINE: /([\d,]+)\s+(EA|KG|MT|PC|SET|BOX|CTN|CARTON|PCS|CS|CT|CAS|CA|ST|RO|NO|PR|PKG|BT|DZ|M2|M3|L|G|TON|M|PL|BL|RL|GL|개|매|본|장|식|롤)\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)/i,
 
     // 외화 금액 라인: 수량 단위 단가 [통화코드] 합계 (예: 2 EA 727.36 USD 1,454.72)
-    AMOUNT_LINE_WITH_CURR: /([\d,]+)\s+(EA|KG|MT|PC|SET|BOX|CTN|PCS|CS|ST|RO|NO|PR|PKG|BT|DZ|M2|M3|L|G|TON|M|PL|BL|RL|GL|개|매|본|장|식|롤)\s+([\d,]+(?:\.\d+)?)\s+(USD|EUR|JPY|GBP|CNY|CHF|HKD|SGD|AUD|CAD|NZD|SEK|NOK|DKK|MYR|THB|INR|VND|IDR|PHP|BRL|RUB|TWD|KWD|SAR|AED|TRY)\s+([\d,]+(?:\.\d+)?)/i,
+    AMOUNT_LINE_WITH_CURR: /([\d,]+)\s+(EA|KG|MT|PC|SET|BOX|CTN|CARTON|PCS|CS|CT|CAS|CA|ST|RO|NO|PR|PKG|BT|DZ|M2|M3|L|G|TON|M|PL|BL|RL|GL|개|매|본|장|식|롤)\s+([\d,]+(?:\.\d+)?)\s+(USD|EUR|JPY|GBP|CNY|CHF|HKD|SGD|AUD|CAD|NZD|SEK|NOK|DKK|MYR|THB|INR|VND|IDR|PHP|BRL|RUB|TWD|KWD|SAR|AED|TRY)\s+([\d,]+(?:\.\d+)?)/i,
 
     // 가짜 금액 라인 필터: 이 키워드가 있는 줄은 제외
     SKIP_LINE: /환급물량|세관기재란|신고인기재란|납부번호|총세액합계|부가가치세과표/,
