@@ -46,19 +46,42 @@ const FOREIGN_CURRENCIES = new Set([
 /* ── STATE ───────────────────────────────────────────────────── */
 const STATE = {
   rows: [],
-  filteredRows: [],
   warnings: [],
   fileCount: 0,
+  columnOrder: [],
 };
+
+const COLUMN_DEFINITIONS = {
+  declNumber:         { label: '신고번호', width: 20, text: true },
+  declDate:           { label: '신고일자', width: 12 },
+  masterBl:           { label: '마스터 B/L', width: 18, text: true },
+  cargoControlNumber: { label: '화물관리번호', width: 25, text: true },
+  arrivalDate:        { label: '입항일', width: 12 },
+  carryInDate:        { label: '반입일', width: 12 },
+  vendor:             { label: '거래처', width: 25 },
+  exportCountry:      { label: '적출국', width: 8 },
+  hsCode:             { label: 'HS코드', width: 14, text: true },
+  itemName:           { label: '품목명', width: 35 },
+  quantity:           { label: '수량', width: 10, numeric: true, format: '#,##0' },
+  unitPrice:          { label: '단가', width: 14, numeric: true, format: '#,##0.00' },
+  currency:           { label: '통화', width: 8 },
+  totalAmount:        { label: '합계금액', width: 16, numeric: true, format: '#,##0.00' },
+  fileName:           { label: '파일명', width: 32 },
+};
+
+const DEFAULT_COLUMNS = [
+  'declNumber', 'declDate', 'masterBl', 'cargoControlNumber', 'arrivalDate',
+  'carryInDate', 'vendor', 'hsCode', 'itemName', 'quantity', 'unitPrice',
+  'currency', 'totalAmount',
+];
 
 /* ── INIT ────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   if (!checkLibraries()) return;
   setupDropZone();
   setupFileInputs();
-  setupFilters();
-  document.getElementById('btnExcel').addEventListener('click', () => exportExcel(STATE.filteredRows));
-  document.getElementById('btnExcelAll').addEventListener('click', () => exportExcel(STATE.rows));
+  setupColumnSettings();
+  document.getElementById('btnExcel').addEventListener('click', () => exportExcel(STATE.rows));
   document.getElementById('btnReset').addEventListener('click', resetApp);
 });
 
@@ -73,12 +96,57 @@ function checkLibraries() {
   return true;
 }
 
-function setupFilters() {
-  document.getElementById('btnApplyFilters').addEventListener('click', applyFilters);
-  document.getElementById('btnClearFilters').addEventListener('click', clearFilters);
-  document.getElementById('filterKeyword').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') applyFilters();
+function setupColumnSettings() {
+  STATE.columnOrder = Object.keys(COLUMN_DEFINITIONS);
+  renderColumnSettings(DEFAULT_COLUMNS);
+  document.getElementById('btnDefaultColumns').addEventListener('click', () => {
+    STATE.columnOrder = Object.keys(COLUMN_DEFINITIONS);
+    renderColumnSettings(DEFAULT_COLUMNS);
+    if (STATE.rows.length) renderTable(STATE.rows);
   });
+  document.getElementById('btnSelectAllColumns').addEventListener('click', () => {
+    renderColumnSettings(STATE.columnOrder);
+    if (STATE.rows.length) renderTable(STATE.rows);
+  });
+}
+
+function getSelectedColumns() {
+  return STATE.columnOrder.filter(key => document.querySelector(`[data-column="${key}"] input`).checked);
+}
+
+function renderColumnSettings(selectedKeys) {
+  const selected = new Set(selectedKeys);
+  const list = document.getElementById('columnList');
+  list.innerHTML = STATE.columnOrder.map((key, index) => `
+    <div class="column-item" data-column="${key}">
+      <label><input type="checkbox" ${selected.has(key) ? 'checked' : ''}> <span>${COLUMN_DEFINITIONS[key].label}</span></label>
+      <div class="column-move">
+        <button type="button" aria-label="위로 이동" data-direction="-1" ${index === 0 ? 'disabled' : ''}>↑</button>
+        <button type="button" aria-label="아래로 이동" data-direction="1" ${index === STATE.columnOrder.length - 1 ? 'disabled' : ''}>↓</button>
+      </div>
+    </div>`).join('');
+
+  list.querySelectorAll('input').forEach(input => input.addEventListener('change', () => {
+    if (getSelectedColumns().length === 0) input.checked = true;
+    updateColumnSummary();
+    if (STATE.rows.length) renderTable(STATE.rows);
+  }));
+  list.querySelectorAll('[data-direction]').forEach(button => button.addEventListener('click', () => {
+    const item = button.closest('.column-item');
+    const key = item.dataset.column;
+    const from = STATE.columnOrder.indexOf(key);
+    const to = from + Number(button.dataset.direction);
+    if (to < 0 || to >= STATE.columnOrder.length) return;
+    const currentSelected = getSelectedColumns();
+    [STATE.columnOrder[from], STATE.columnOrder[to]] = [STATE.columnOrder[to], STATE.columnOrder[from]];
+    renderColumnSettings(currentSelected);
+    if (STATE.rows.length) renderTable(STATE.rows);
+  }));
+  updateColumnSummary();
+}
+
+function updateColumnSummary() {
+  document.getElementById('columnSummary').textContent = `${getSelectedColumns().length}개 항목 선택`;
 }
 
 /* ── FILE COLLECTION ─────────────────────────────────────────── */
@@ -575,17 +643,14 @@ function parseKoreanNumber(str) {
 
 async function processFiles(files) {
   STATE.rows     = [];
-  STATE.filteredRows = [];
   STATE.warnings = [];
   STATE.fileCount = files.length;
-  resetFilterControls();
 
   const zone = document.getElementById('dropZone');
   zone.classList.add('drop-zone--loading');
 
   showSection('progressSection', true);
   showSection('summaryStats',    false);
-  showSection('filterPanel',     false);
   showSection('actionBar',       false);
   showSection('tableSection',    false);
 
@@ -626,13 +691,10 @@ async function processFiles(files) {
   setProgress(files.length, files.length, `완료: ${files.length}개 파일 처리됨`);
 
   renderTable(STATE.rows);
-  STATE.filteredRows = [...STATE.rows];
-  populateFilterOptions();
-  updateFilteredResults();
+  renderSummaryStats(STATE.rows);
   renderWarnings(STATE.warnings);
 
   showSection('summaryStats', true);
-  showSection('filterPanel',  true);
   showSection('actionBar',    true);
   showSection('tableSection', true);
 
@@ -640,98 +702,34 @@ async function processFiles(files) {
   setTimeout(() => showSection('progressSection', false), 1500);
 }
 
-function populateFilterOptions() {
-  const fillSelect = (id, values) => {
-    const select = document.getElementById(id);
-    select.innerHTML = '<option value="">전체</option>' + values
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b, 'ko'))
-      .map(value => `<option value="${escHtml(value)}">${escHtml(value)}</option>`)
-      .join('');
-  };
-  fillSelect('filterVendor', [...new Set(STATE.rows.map(r => r.vendor))]);
-  fillSelect('filterCountry', [...new Set(STATE.rows.map(r => r.exportCountry))]);
-}
-
-function applyFilters() {
-  const keyword = document.getElementById('filterKeyword').value.trim().toLowerCase();
-  const dateFrom = document.getElementById('filterDateFrom').value;
-  const dateTo = document.getElementById('filterDateTo').value;
-  const vendor = document.getElementById('filterVendor').value;
-  const hsCode = document.getElementById('filterHsCode').value.trim().replace(/[.\-\s]/g, '');
-  const country = document.getElementById('filterCountry').value;
-
-  STATE.filteredRows = STATE.rows.filter(r => {
-    const searchable = [
-      r.fileName, r.declNumber, r.masterBl, r.cargoControlNumber,
-      r.vendor, r.hsCode, r.itemName, r.exportCountry,
-    ].join(' ').toLowerCase();
-    if (keyword && !searchable.includes(keyword)) return false;
-    if (dateFrom && (!r.declDate || r.declDate < dateFrom)) return false;
-    if (dateTo && (!r.declDate || r.declDate > dateTo)) return false;
-    if (vendor && r.vendor !== vendor) return false;
-    if (hsCode && !String(r.hsCode || '').replace(/[.\-\s]/g, '').includes(hsCode)) return false;
-    if (country && r.exportCountry !== country) return false;
-    return true;
-  });
-  updateFilteredResults();
-}
-
-function clearFilters() {
-  resetFilterControls();
-  STATE.filteredRows = [...STATE.rows];
-  updateFilteredResults();
-}
-
-function resetFilterControls() {
-  ['filterKeyword', 'filterDateFrom', 'filterDateTo', 'filterHsCode'].forEach(id => {
-    document.getElementById(id).value = '';
-  });
-  document.getElementById('filterVendor').value = '';
-  document.getElementById('filterCountry').value = '';
-}
-
-function updateFilteredResults() {
-  renderTable(STATE.filteredRows);
-  renderSummaryStats(STATE.filteredRows);
-  const filtered = STATE.filteredRows.length !== STATE.rows.length;
-  document.getElementById('filterSummary').textContent = filtered
-    ? `${STATE.filteredRows.length}건 / 전체 ${STATE.rows.length}건`
-    : `전체 ${STATE.rows.length}건`;
-  document.getElementById('btnExcel').disabled = STATE.filteredRows.length === 0;
-}
-
 /* ── RENDER ──────────────────────────────────────────────────── */
 
 function renderTable(rows) {
+  const thead = document.getElementById('resultsHead');
   const tbody = document.getElementById('resultsBody');
   const tfoot = document.getElementById('resultsFoot');
+  const columns = getSelectedColumns();
+
+  thead.innerHTML = columns.map(key => {
+    const def = COLUMN_DEFINITIONS[key];
+    return `<th class="${def.numeric ? 'num' : ''}">${escHtml(def.label)}</th>`;
+  }).join('');
 
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--color-text-muted);padding:24px;">추출된 데이터가 없습니다</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center;color:var(--color-text-muted);padding:24px;">추출된 데이터가 없습니다</td></tr>`;
     tfoot.innerHTML = '';
     return;
   }
 
-  tbody.innerHTML = rows.map(r => {
-    const isForeign = r.currency && r.currency !== 'KRW';
-    return `
-    <tr>
-      <td class="decl-number">${escHtml(r.declNumber)}</td>
-      <td>${escHtml(r.declDate)}</td>
-      <td class="code">${escHtml(r.masterBl)}</td>
-      <td class="code">${escHtml(r.cargoControlNumber)}</td>
-      <td>${escHtml(r.arrivalDate)}</td>
-      <td>${escHtml(r.carryInDate)}</td>
-      <td>${escHtml(r.vendor)}</td>
-      <td class="code">${escHtml(r.hsCode)}</td>
-      <td>${escHtml(r.itemName)}</td>
-      <td class="num">${formatNumber(r.quantity)}</td>
-      <td class="num">${formatNumber(r.unitPrice)}</td>
-      <td class="currency-cell"><span class="currency-tag ${isForeign ? 'currency-tag--foreign' : 'currency-tag--krw'}">${escHtml(r.currency || 'KRW')}</span></td>
-      <td class="num">${formatNumber(r.totalAmount)}</td>
-    </tr>`;
-  }).join('');
+  tbody.innerHTML = rows.map(r => `<tr>${columns.map(key => {
+    const def = COLUMN_DEFINITIONS[key];
+    const value = key === 'currency' ? (r[key] || 'KRW') : r[key];
+    if (key === 'currency') {
+      const isForeign = value !== 'KRW';
+      return `<td class="currency-cell"><span class="currency-tag ${isForeign ? 'currency-tag--foreign' : 'currency-tag--krw'}">${escHtml(value)}</span></td>`;
+    }
+    return `<td class="${def.numeric ? 'num' : def.text ? 'code' : ''}">${def.numeric ? formatNumber(value) : escHtml(value)}</td>`;
+  }).join('')}</tr>`).join('');
 
   const byCurrency = new Map();
   for (const r of rows) {
@@ -741,17 +739,14 @@ function renderTable(rows) {
   const currEntries = [...byCurrency.entries()].sort((a, b) =>
     a[0] === 'KRW' ? -1 : b[0] === 'KRW' ? 1 : a[0].localeCompare(b[0])
   );
-  tfoot.innerHTML = currEntries.map(([curr, total], idx) => {
-    const isForeign = curr !== 'KRW';
-    return `
-    <tr>
-      <td colspan="9" style="font-family:var(--font-body);font-size:0.85rem;">${idx === 0 ? '합계' : ''}</td>
-      <td class="num"></td>
-      <td class="num"></td>
-      <td class="currency-cell"><span class="currency-tag ${isForeign ? 'currency-tag--foreign' : 'currency-tag--krw'}">${escHtml(curr)}</span></td>
-      <td class="num">${formatNumber(total)}</td>
-    </tr>`;
-  }).join('');
+  tfoot.innerHTML = columns.includes('totalAmount') ? currEntries.map(([curr, total], idx) =>
+    `<tr>${columns.map((key, colIndex) => {
+      if (key === 'totalAmount') return `<td class="num">${formatNumber(total)}</td>`;
+      if (key === 'currency') return `<td class="currency-cell">${escHtml(curr)}</td>`;
+      if (colIndex === 0) return `<td>합계${currEntries.length > 1 ? ` (${escHtml(curr)})` : ''}</td>`;
+      return '<td></td>';
+    }).join('')}</tr>`
+  ).join('') : '';
 }
 
 function renderSummaryStats(rows = STATE.rows) {
@@ -813,35 +808,24 @@ function exportExcel(rows) {
   if (!rows || rows.length === 0) return;
 
   const wb = XLSX.utils.book_new();
+  const columns = getSelectedColumns();
 
-  // Sheet 1: 원본
+  // Sheet 1: 사용자가 선택한 항목과 순서를 그대로 반영
   const sheet1Data = [
-    ['신고번호', '신고일자', '마스터 B/L', '화물관리번호', '입항일', '반입일', '거래처', 'HS코드', '품목명', '수량', '단가', '통화', '합계금액'],
-    ...rows.map(r => [
-      r.declNumber,
-      r.declDate,
-      { t: 's', v: r.masterBl || '' },
-      { t: 's', v: r.cargoControlNumber || '' },
-      r.arrivalDate || '',
-      r.carryInDate || '',
-      r.vendor,
-      { t: 's', v: r.hsCode },   // 텍스트 강제 (과학적 표기 방지)
-      r.itemName,
-      r.quantity,
-      r.unitPrice,
-      r.currency || 'KRW',
-      r.totalAmount,
-    ]),
+    columns.map(key => COLUMN_DEFINITIONS[key].label),
+    ...rows.map(r => columns.map(key => {
+      const def = COLUMN_DEFINITIONS[key];
+      const value = key === 'currency' ? (r[key] || 'KRW') : (r[key] ?? '');
+      return def.text ? { t: 's', v: String(value) } : value;
+    })),
   ];
   const ws1 = XLSX.utils.aoa_to_sheet(sheet1Data);
-  ws1['!cols'] = [
-    { wch: 20 }, { wch: 12 }, { wch: 18 }, { wch: 25 }, { wch: 12 },
-    { wch: 12 }, { wch: 25 }, { wch: 14 }, { wch: 35 }, { wch: 10 },
-    { wch: 14 }, { wch: 8 }, { wch: 16 },
-  ];
-  applyNumberFormat(ws1, sheet1Data.length, [9],      '#,##0');
-  applyNumberFormat(ws1, sheet1Data.length, [10, 12], '#,##0.00');
-  XLSX.utils.book_append_sheet(wb, ws1, '원본');
+  ws1['!cols'] = columns.map(key => ({ wch: COLUMN_DEFINITIONS[key].width }));
+  columns.forEach((key, index) => {
+    const format = COLUMN_DEFINITIONS[key].format;
+    if (format) applyNumberFormat(ws1, sheet1Data.length, [index], format);
+  });
+  XLSX.utils.book_append_sheet(wb, ws1, '선택항목');
 
   // Sheet 2: 신고번호별 (적출국은 선적국 기준 문서 레벨)
   const byDecl = groupAndSum(rows, 'declNumber', [
@@ -940,7 +924,6 @@ function showSection(id, visible) {
 
 function resetApp() {
   STATE.rows     = [];
-  STATE.filteredRows = [];
   STATE.warnings = [];
   STATE.fileCount = 0;
 
@@ -950,7 +933,6 @@ function resetApp() {
 
   showSection('summaryStats',   false);
   showSection('actionBar',      false);
-  showSection('filterPanel',    false);
   showSection('tableSection',   false);
   showSection('progressSection',false);
   showSection('warningsDetails',false);
@@ -962,5 +944,4 @@ function resetApp() {
   debugPanel.hidden = true;
   debugPanel.open   = false;
   document.getElementById('debugText').value = '';
-  resetFilterControls();
 }

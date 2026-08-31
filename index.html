@@ -91,38 +91,14 @@
       </div>
     </section>
 
-    <!-- Result Filters -->
-    <details class="filter-panel" id="filterPanel" hidden open>
-      <summary>결과 필터 <span class="filter-summary" id="filterSummary">전체 결과</span></summary>
-      <div class="filter-grid">
-        <label class="filter-field filter-field--wide">
-          <span>통합 검색</span>
-          <input type="search" id="filterKeyword" placeholder="신고번호, B/L, 화물관리번호, 품목명 검색">
-        </label>
-        <label class="filter-field">
-          <span>신고일자 시작</span>
-          <input type="date" id="filterDateFrom">
-        </label>
-        <label class="filter-field">
-          <span>신고일자 종료</span>
-          <input type="date" id="filterDateTo">
-        </label>
-        <label class="filter-field">
-          <span>거래처</span>
-          <select id="filterVendor"><option value="">전체</option></select>
-        </label>
-        <label class="filter-field">
-          <span>HS코드</span>
-          <input type="search" id="filterHsCode" placeholder="예: 420231">
-        </label>
-        <label class="filter-field">
-          <span>적출국</span>
-          <select id="filterCountry"><option value="">전체</option></select>
-        </label>
-      </div>
-      <div class="filter-actions">
-        <button class="btn btn--primary" id="btnApplyFilters" type="button">필터 적용</button>
-        <button class="btn btn--ghost" id="btnClearFilters" type="button">필터 초기화</button>
+    <!-- Excel Column Settings -->
+    <details class="column-panel" id="columnPanel" open>
+      <summary>엑셀 추출 항목 설정 <span class="column-summary" id="columnSummary"></span></summary>
+      <p class="column-panel__hint">포함할 항목을 체크하고 화살표로 엑셀 열 순서를 정하세요. 설정은 화면 표에도 동일하게 적용됩니다.</p>
+      <div class="column-list" id="columnList"></div>
+      <div class="column-actions">
+        <button class="btn btn--secondary" id="btnDefaultColumns" type="button">기본값 복원</button>
+        <button class="btn btn--ghost" id="btnSelectAllColumns" type="button">전체 선택</button>
       </div>
     </details>
 
@@ -130,9 +106,8 @@
     <div class="action-bar" id="actionBar" hidden>
       <button class="btn btn--primary btn--large" id="btnExcel" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        필터 결과 엑셀 다운로드
+        엑셀 다운로드 (.xlsx)
       </button>
-      <button class="btn btn--secondary" id="btnExcelAll" type="button">전체 결과 엑셀 다운로드</button>
       <button class="btn btn--ghost" id="btnReset" type="button">초기화</button>
     </div>
 
@@ -140,23 +115,7 @@
     <section class="table-section" id="tableSection" hidden>
       <div class="table-wrapper">
         <table class="results-table" id="resultsTable">
-          <thead>
-            <tr>
-              <th>신고번호</th>
-              <th>신고일자</th>
-              <th>마스터 B/L</th>
-              <th>화물관리번호</th>
-              <th>입항일</th>
-              <th>반입일</th>
-              <th>거래처</th>
-              <th>HS코드</th>
-              <th>품목명</th>
-              <th class="num">수량</th>
-              <th class="num">단가</th>
-              <th class="currency-col">통화</th>
-              <th class="num">합계금액</th>
-            </tr>
-          </thead>
+          <thead><tr id="resultsHead"></tr></thead>
           <tbody id="resultsBody"></tbody>
           <tfoot id="resultsFoot"></tfoot>
         </table>
