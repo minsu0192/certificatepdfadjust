@@ -53,18 +53,20 @@ body {
 
 .brand strong,
 .brand small {
-  display: block;
+  display: inline;
 }
 
 .brand strong {
   font-size: 0.98rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .brand small {
-  margin-top: 1px;
+  margin-left: 6px;
   color: var(--muted);
   font-size: 0.73rem;
+  white-space: nowrap;
 }
 
 .header-actions {
@@ -123,7 +125,7 @@ main {
   max-width: 760px;
   margin-top: 10px;
   color: var(--green-dark);
-  font-size: clamp(2rem, 4vw, 3.2rem);
+  font-size: clamp(1.85rem, 3.4vw, 2.75rem);
   font-weight: 750;
   line-height: 1.16;
 }
