@@ -233,12 +233,23 @@ function extractFromText(rawText, fileName) {
   const vendor          = extractVendor(rawText);
   const declCurrency    = extractCurrency(rawText);
   const exportCountry   = extractExportCountry(rawText);
+  const logistics      = extractLogisticsFields(rawText);
   if (!exportCountry) {
     const idx = rawText.search(/적\s*출\s*국/);
     if (idx >= 0) console.log(`[적출국-miss] ${fileName}:`, JSON.stringify(rawText.slice(idx, idx + 60)));
     else          console.log(`[적출국-miss] ${fileName}: "적출국" 텍스트 없음, 앞500자=`, JSON.stringify(rawText.slice(0, 500)));
   }
   const items = extractItemLines(rawText);
+
+  const missingLogistics = [
+    ['마스터 B/L', logistics.masterBl],
+    ['화물관리번호', logistics.cargoControlNumber],
+    ['입항일', logistics.arrivalDate],
+    ['반입일', logistics.carryInDate],
+  ].filter(([, value]) => !value).map(([label]) => label);
+  if (missingLogistics.length > 0) {
+    warns.push(`${fileName} / ${declNumber}: ${missingLogistics.join(', ')} 값을 찾을 수 없음`);
+  }
 
   if (items.length === 0) {
     warns.push(`${fileName} / ${declNumber}: 품목 라인을 찾을 수 없음`);
@@ -258,10 +269,40 @@ function extractFromText(rawText, fileName) {
       totalAmount: item.totalAmount,
       currency:      item.currency || declCurrency,
       exportCountry,
+      ...logistics,
     });
   }
 
   return { rows, warns };
+}
+
+function normalizeDate(value) {
+  return value ? value.replace(/[./]/g, '-') : '';
+}
+
+function extractLogisticsFields(text) {
+  let masterBl = '';
+  let cargoControlNumber = '';
+  let arrivalDate = '';
+  let carryInDate = '';
+
+  // 27 MASTER B/L번호 02363663106 28 운수기관부호 ...
+  let m = text.match(/MASTER\s*B\s*\/\s*L\s*번호\s*[:：]?\s*([^\s\r\n]+)/i);
+  if (m) masterBl = m[1].trim();
+
+  // 첫 표의 헤더 바로 아래 데이터 행에서 입항일을 읽는다.
+  m = text.match(/신고번호[^\r\n]*입항일[^\r\n]*[\r\n]+\s*\d{5}-\d{2}-\d+[A-Z]?\s+\d{4}[./-]\d{2}[./-]\d{2}\s+\S+\s+(\d{4}[./-]\d{2}[./-]\d{2})/i);
+  if (m) arrivalDate = normalizeDate(m[1]);
+
+  // 4 B/L(AWB)번호 5 화물관리번호 8 반입일 ... 의 다음 행:
+  // House B/L, 화물관리번호, 반입일, 징수형태 순서
+  m = text.match(/B\s*\/\s*L\s*\(\s*AWB\s*\)\s*번호[^\r\n]*화물관리번호[^\r\n]*반입일[^\r\n]*[\r\n]+\s*\S+\s+(\S+)(?:\s+(\d{4}[./-]\d{2}[./-]\d{2}))?/i);
+  if (m) {
+    cargoControlNumber = m[1].trim();
+    carryInDate = normalizeDate(m[2] || '');
+  }
+
+  return { masterBl, cargoControlNumber, arrivalDate, carryInDate };
 }
 
 function extractDeclarationDate(text) {
@@ -589,7 +630,7 @@ function renderTable(rows) {
   const tfoot = document.getElementById('resultsFoot');
 
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--color-text-muted);padding:24px;">추출된 데이터가 없습니다</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center;color:var(--color-text-muted);padding:24px;">추출된 데이터가 없습니다</td></tr>';
     tfoot.innerHTML = '';
     return;
   }
@@ -600,6 +641,10 @@ function renderTable(rows) {
     <tr>
       <td class="decl-number">${escHtml(r.declNumber)}</td>
       <td>${escHtml(r.declDate)}</td>
+      <td class="code">${escHtml(r.masterBl)}</td>
+      <td class="code">${escHtml(r.cargoControlNumber)}</td>
+      <td>${escHtml(r.arrivalDate)}</td>
+      <td>${escHtml(r.carryInDate)}</td>
       <td>${escHtml(r.vendor)}</td>
       <td class="code">${escHtml(r.hsCode)}</td>
       <td>${escHtml(r.itemName)}</td>
@@ -622,7 +667,7 @@ function renderTable(rows) {
     const isForeign = curr !== 'KRW';
     return `
     <tr>
-      <td colspan="5" style="font-family:var(--font-body);font-size:0.85rem;">${idx === 0 ? '합계' : ''}</td>
+      <td colspan="9" style="font-family:var(--font-body);font-size:0.85rem;">${idx === 0 ? '합계' : ''}</td>
       <td class="num"></td>
       <td class="num"></td>
       <td class="currency-cell"><span class="currency-tag ${isForeign ? 'currency-tag--foreign' : 'currency-tag--krw'}">${escHtml(curr)}</span></td>
@@ -693,10 +738,14 @@ function exportExcel() {
 
   // Sheet 1: 원본
   const sheet1Data = [
-    ['신고번호', '신고일자', '거래처', 'HS코드', '품목명', '수량', '단가', '통화', '합계금액'],
+    ['신고번호', '신고일자', '마스터 B/L', '화물관리번호', '입항일', '반입일', '거래처', 'HS코드', '품목명', '수량', '단가', '통화', '합계금액'],
     ...STATE.rows.map(r => [
       r.declNumber,
       r.declDate,
+      { t: 's', v: r.masterBl || '' },
+      { t: 's', v: r.cargoControlNumber || '' },
+      r.arrivalDate || '',
+      r.carryInDate || '',
       r.vendor,
       { t: 's', v: r.hsCode },   // 텍스트 강제 (과학적 표기 방지)
       r.itemName,
@@ -708,22 +757,33 @@ function exportExcel() {
   ];
   const ws1 = XLSX.utils.aoa_to_sheet(sheet1Data);
   ws1['!cols'] = [
-    { wch: 20 }, { wch: 12 }, { wch: 25 }, { wch: 14 },
-    { wch: 35 }, { wch: 10 }, { wch: 14 }, { wch: 8  }, { wch: 16 },
+    { wch: 20 }, { wch: 12 }, { wch: 18 }, { wch: 25 }, { wch: 12 },
+    { wch: 12 }, { wch: 25 }, { wch: 14 }, { wch: 35 }, { wch: 10 },
+    { wch: 14 }, { wch: 8 }, { wch: 16 },
   ];
-  applyNumberFormat(ws1, sheet1Data.length, [5],    '#,##0');
-  applyNumberFormat(ws1, sheet1Data.length, [6, 8], '#,##0.00');
+  applyNumberFormat(ws1, sheet1Data.length, [9],      '#,##0');
+  applyNumberFormat(ws1, sheet1Data.length, [10, 12], '#,##0.00');
   XLSX.utils.book_append_sheet(wb, ws1, '원본');
 
   // Sheet 2: 신고번호별 (적출국은 선적국 기준 문서 레벨)
-  const byDecl = groupAndSum(STATE.rows, 'declNumber', ['declDate', 'vendor', 'currency', 'exportCountry']);
+  const byDecl = groupAndSum(STATE.rows, 'declNumber', [
+    'declDate', 'masterBl', 'cargoControlNumber', 'arrivalDate', 'carryInDate',
+    'vendor', 'currency', 'exportCountry',
+  ]);
   const sheet2Data = [
-    ['신고번호', '신고일자', '거래처', '적출국', '통화', '합계금액'],
-    ...byDecl.map(g => [g.key, g.declDate, g.vendor, g.exportCountry || '', g.currency || 'KRW', g.sum]),
+    ['신고번호', '신고일자', '마스터 B/L', '화물관리번호', '입항일', '반입일', '거래처', '적출국', '통화', '합계금액'],
+    ...byDecl.map(g => [
+      g.key, g.declDate, { t: 's', v: g.masterBl || '' },
+      { t: 's', v: g.cargoControlNumber || '' }, g.arrivalDate || '',
+      g.carryInDate || '', g.vendor, g.exportCountry || '', g.currency || 'KRW', g.sum,
+    ]),
   ];
   const ws2 = XLSX.utils.aoa_to_sheet(sheet2Data);
-  ws2['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 16 }];
-  applyNumberFormat(ws2, sheet2Data.length, [5], '#,##0');
+  ws2['!cols'] = [
+    { wch: 20 }, { wch: 12 }, { wch: 18 }, { wch: 25 }, { wch: 12 },
+    { wch: 12 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 16 },
+  ];
+  applyNumberFormat(ws2, sheet2Data.length, [9], '#,##0');
   XLSX.utils.book_append_sheet(wb, ws2, '신고번호별');
 
   // Sheet 3: 월별 (적출국별 + 통화별)
