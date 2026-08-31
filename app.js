@@ -69,11 +69,7 @@ const COLUMN_DEFINITIONS = {
   fileName:           { label: '파일명', width: 32 },
 };
 
-const DEFAULT_COLUMNS = [
-  'declNumber', 'declDate', 'masterBl', 'cargoControlNumber', 'arrivalDate',
-  'carryInDate', 'vendor', 'hsCode', 'itemName', 'quantity', 'unitPrice',
-  'currency', 'totalAmount',
-];
+const DEFAULT_COLUMNS = Object.keys(COLUMN_DEFINITIONS);
 
 /* ── INIT ────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -119,6 +115,7 @@ function renderColumnSettings(selectedKeys) {
   const list = document.getElementById('columnList');
   list.innerHTML = STATE.columnOrder.map((key, index) => `
     <div class="column-item" data-column="${key}">
+      <span class="column-number">${index + 1}</span>
       <label><input type="checkbox" ${selected.has(key) ? 'checked' : ''}> <span>${COLUMN_DEFINITIONS[key].label}</span></label>
       <div class="column-move">
         <button type="button" aria-label="위로 이동" data-direction="-1" ${index === 0 ? 'disabled' : ''}>↑</button>
