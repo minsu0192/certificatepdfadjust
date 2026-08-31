@@ -115,16 +115,19 @@ function renderColumnSettings(selectedKeys) {
   const list = document.getElementById('columnList');
   list.innerHTML = STATE.columnOrder.map((key, index) => `
     <div class="column-item" data-column="${key}">
+      <span class="column-grip" aria-hidden="true">⋮⋮</span>
       <span class="column-number">${index + 1}</span>
-      <label><input type="checkbox" ${selected.has(key) ? 'checked' : ''}> <span>${COLUMN_DEFINITIONS[key].label}</span></label>
+      <label><input type="checkbox" ${selected.has(key) ? 'checked' : ''}> <span class="column-name">${COLUMN_DEFINITIONS[key].label}</span></label>
+      <span class="column-state">${selected.has(key) ? '포함' : '제외'}</span>
       <div class="column-move">
-        <button type="button" aria-label="위로 이동" data-direction="-1" ${index === 0 ? 'disabled' : ''}>↑</button>
-        <button type="button" aria-label="아래로 이동" data-direction="1" ${index === STATE.columnOrder.length - 1 ? 'disabled' : ''}>↓</button>
+        <button type="button" title="위로 이동" aria-label="위로 이동" data-direction="-1" ${index === 0 ? 'disabled' : ''}>↑</button>
+        <button type="button" title="아래로 이동" aria-label="아래로 이동" data-direction="1" ${index === STATE.columnOrder.length - 1 ? 'disabled' : ''}>↓</button>
       </div>
     </div>`).join('');
 
   list.querySelectorAll('input').forEach(input => input.addEventListener('change', () => {
     if (getSelectedColumns().length === 0) input.checked = true;
+    input.closest('.column-item').querySelector('.column-state').textContent = input.checked ? '포함' : '제외';
     updateColumnSummary();
     if (STATE.rows.length) renderTable(STATE.rows);
   }));

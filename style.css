@@ -241,32 +241,69 @@ body {
 
 /* ── Excel Column Settings ──────────────────────────────────── */
 .column-panel {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: linear-gradient(145deg, #FFFFFF 0%, #F8FBF9 100%);
+  border: 1px solid var(--color-accent-mid);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 8px 28px rgba(44, 95, 63, 0.08);
   overflow: hidden;
 }
 
 .column-panel > summary {
   cursor: pointer;
-  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
   font-weight: 600;
   color: var(--color-accent);
   user-select: none;
+  background: linear-gradient(90deg, var(--color-accent-light), rgba(255,255,255,0.8));
+  border-bottom: 1px solid transparent;
+}
+
+.column-panel[open] > summary { border-bottom-color: var(--color-accent-mid); }
+
+.column-panel__title { display: inline-flex; align-items: center; gap: 8px; }
+
+.column-panel__icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 0.78rem;
 }
 
 .column-summary {
-  margin-left: 8px;
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
-  font-weight: 400;
+  color: var(--color-accent);
+  background: #fff;
+  border: 1px solid var(--color-accent-mid);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.column-panel__intro {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 18px 2px 14px;
 }
 
 .column-panel__hint {
-  padding: 0 20px 12px;
   color: var(--color-text-muted);
-  font-size: 0.83rem;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.column-panel__subhint {
+  margin-top: 2px;
+  color: #928A84;
+  font-size: 0.78rem;
 }
 
 .column-list {
@@ -279,21 +316,31 @@ body {
 
 .column-item {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  grid-template-columns: 18px 34px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
-  min-height: 46px;
+  min-height: 52px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: 6px 8px;
+  padding: 7px 9px;
   background: #fff;
-  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+  box-shadow: 0 1px 2px rgba(24, 24, 27, 0.03);
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.column-item:hover {
+  border-color: var(--color-accent-mid);
+  box-shadow: 0 4px 12px rgba(44, 95, 63, 0.08);
+  transform: translateY(-1px);
 }
 
 .column-item:has(input:not(:checked)) {
-  opacity: 0.58;
+  opacity: 0.62;
   background: var(--color-bg);
+  box-shadow: none;
 }
+
+.column-grip { color: #B8B0AA; font-size: 0.8rem; letter-spacing: -4px; }
 
 .column-number {
   display: grid;
@@ -317,7 +364,25 @@ body {
   color: var(--color-text);
 }
 
-.column-item input { accent-color: var(--color-accent); }
+.column-item input { width: 17px; height: 17px; accent-color: var(--color-accent); }
+
+.column-name { font-weight: 500; }
+
+.column-state {
+  min-width: 42px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.column-item:has(input:not(:checked)) .column-state {
+  background: #EAE7E4;
+  color: var(--color-text-muted);
+}
 
 .column-move { display: flex; gap: 3px; }
 
@@ -340,15 +405,19 @@ body {
 
 .column-actions {
   display: flex;
+  justify-content: center;
   gap: 8px;
-  padding: 0 20px 18px;
+  padding: 2px 20px 22px;
 }
 
 .column-actions .btn--secondary { padding: 9px 16px; }
 
 @media (max-width: 760px) {
   .column-list { padding-left: 12px; padding-right: 12px; }
-  .column-panel__hint { padding-left: 14px; padding-right: 14px; }
+  .column-panel__intro { padding-left: 14px; padding-right: 14px; }
+  .column-item { grid-template-columns: 26px minmax(0, 1fr) auto; }
+  .column-grip, .column-state { display: none; }
+  .column-panel > summary { align-items: flex-start; flex-direction: column; }
 }
 
 /* ── Progress ───────────────────────────────────────────────── */
