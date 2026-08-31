@@ -91,12 +91,48 @@
       </div>
     </section>
 
+    <!-- Result Filters -->
+    <details class="filter-panel" id="filterPanel" hidden open>
+      <summary>결과 필터 <span class="filter-summary" id="filterSummary">전체 결과</span></summary>
+      <div class="filter-grid">
+        <label class="filter-field filter-field--wide">
+          <span>통합 검색</span>
+          <input type="search" id="filterKeyword" placeholder="신고번호, B/L, 화물관리번호, 품목명 검색">
+        </label>
+        <label class="filter-field">
+          <span>신고일자 시작</span>
+          <input type="date" id="filterDateFrom">
+        </label>
+        <label class="filter-field">
+          <span>신고일자 종료</span>
+          <input type="date" id="filterDateTo">
+        </label>
+        <label class="filter-field">
+          <span>거래처</span>
+          <select id="filterVendor"><option value="">전체</option></select>
+        </label>
+        <label class="filter-field">
+          <span>HS코드</span>
+          <input type="search" id="filterHsCode" placeholder="예: 420231">
+        </label>
+        <label class="filter-field">
+          <span>적출국</span>
+          <select id="filterCountry"><option value="">전체</option></select>
+        </label>
+      </div>
+      <div class="filter-actions">
+        <button class="btn btn--primary" id="btnApplyFilters" type="button">필터 적용</button>
+        <button class="btn btn--ghost" id="btnClearFilters" type="button">필터 초기화</button>
+      </div>
+    </details>
+
     <!-- Action Bar -->
     <div class="action-bar" id="actionBar" hidden>
       <button class="btn btn--primary btn--large" id="btnExcel" type="button">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        엑셀 다운로드 (.xlsx)
+        필터 결과 엑셀 다운로드
       </button>
+      <button class="btn btn--secondary" id="btnExcelAll" type="button">전체 결과 엑셀 다운로드</button>
       <button class="btn btn--ghost" id="btnReset" type="button">초기화</button>
     </div>
 

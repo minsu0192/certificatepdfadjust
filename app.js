@@ -46,6 +46,7 @@ const FOREIGN_CURRENCIES = new Set([
 /* ── STATE ───────────────────────────────────────────────────── */
 const STATE = {
   rows: [],
+  filteredRows: [],
   warnings: [],
   fileCount: 0,
 };
@@ -55,7 +56,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!checkLibraries()) return;
   setupDropZone();
   setupFileInputs();
-  document.getElementById('btnExcel').addEventListener('click', exportExcel);
+  setupFilters();
+  document.getElementById('btnExcel').addEventListener('click', () => exportExcel(STATE.filteredRows));
+  document.getElementById('btnExcelAll').addEventListener('click', () => exportExcel(STATE.rows));
   document.getElementById('btnReset').addEventListener('click', resetApp);
 });
 
@@ -68,6 +71,14 @@ function checkLibraries() {
   }
   pdfjsLib.GlobalWorkerOptions.workerSrc = CONFIG.PDFJS_WORKER_URL;
   return true;
+}
+
+function setupFilters() {
+  document.getElementById('btnApplyFilters').addEventListener('click', applyFilters);
+  document.getElementById('btnClearFilters').addEventListener('click', clearFilters);
+  document.getElementById('filterKeyword').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') applyFilters();
+  });
 }
 
 /* ── FILE COLLECTION ─────────────────────────────────────────── */
@@ -564,14 +575,17 @@ function parseKoreanNumber(str) {
 
 async function processFiles(files) {
   STATE.rows     = [];
+  STATE.filteredRows = [];
   STATE.warnings = [];
   STATE.fileCount = files.length;
+  resetFilterControls();
 
   const zone = document.getElementById('dropZone');
   zone.classList.add('drop-zone--loading');
 
   showSection('progressSection', true);
   showSection('summaryStats',    false);
+  showSection('filterPanel',     false);
   showSection('actionBar',       false);
   showSection('tableSection',    false);
 
@@ -612,15 +626,79 @@ async function processFiles(files) {
   setProgress(files.length, files.length, `완료: ${files.length}개 파일 처리됨`);
 
   renderTable(STATE.rows);
-  renderSummaryStats();
+  STATE.filteredRows = [...STATE.rows];
+  populateFilterOptions();
+  updateFilteredResults();
   renderWarnings(STATE.warnings);
 
   showSection('summaryStats', true);
+  showSection('filterPanel',  true);
   showSection('actionBar',    true);
   showSection('tableSection', true);
 
   zone.classList.remove('drop-zone--loading');
   setTimeout(() => showSection('progressSection', false), 1500);
+}
+
+function populateFilterOptions() {
+  const fillSelect = (id, values) => {
+    const select = document.getElementById(id);
+    select.innerHTML = '<option value="">전체</option>' + values
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, 'ko'))
+      .map(value => `<option value="${escHtml(value)}">${escHtml(value)}</option>`)
+      .join('');
+  };
+  fillSelect('filterVendor', [...new Set(STATE.rows.map(r => r.vendor))]);
+  fillSelect('filterCountry', [...new Set(STATE.rows.map(r => r.exportCountry))]);
+}
+
+function applyFilters() {
+  const keyword = document.getElementById('filterKeyword').value.trim().toLowerCase();
+  const dateFrom = document.getElementById('filterDateFrom').value;
+  const dateTo = document.getElementById('filterDateTo').value;
+  const vendor = document.getElementById('filterVendor').value;
+  const hsCode = document.getElementById('filterHsCode').value.trim().replace(/[.\-\s]/g, '');
+  const country = document.getElementById('filterCountry').value;
+
+  STATE.filteredRows = STATE.rows.filter(r => {
+    const searchable = [
+      r.fileName, r.declNumber, r.masterBl, r.cargoControlNumber,
+      r.vendor, r.hsCode, r.itemName, r.exportCountry,
+    ].join(' ').toLowerCase();
+    if (keyword && !searchable.includes(keyword)) return false;
+    if (dateFrom && (!r.declDate || r.declDate < dateFrom)) return false;
+    if (dateTo && (!r.declDate || r.declDate > dateTo)) return false;
+    if (vendor && r.vendor !== vendor) return false;
+    if (hsCode && !String(r.hsCode || '').replace(/[.\-\s]/g, '').includes(hsCode)) return false;
+    if (country && r.exportCountry !== country) return false;
+    return true;
+  });
+  updateFilteredResults();
+}
+
+function clearFilters() {
+  resetFilterControls();
+  STATE.filteredRows = [...STATE.rows];
+  updateFilteredResults();
+}
+
+function resetFilterControls() {
+  ['filterKeyword', 'filterDateFrom', 'filterDateTo', 'filterHsCode'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('filterVendor').value = '';
+  document.getElementById('filterCountry').value = '';
+}
+
+function updateFilteredResults() {
+  renderTable(STATE.filteredRows);
+  renderSummaryStats(STATE.filteredRows);
+  const filtered = STATE.filteredRows.length !== STATE.rows.length;
+  document.getElementById('filterSummary').textContent = filtered
+    ? `${STATE.filteredRows.length}건 / 전체 ${STATE.rows.length}건`
+    : `전체 ${STATE.rows.length}건`;
+  document.getElementById('btnExcel').disabled = STATE.filteredRows.length === 0;
 }
 
 /* ── RENDER ──────────────────────────────────────────────────── */
@@ -676,12 +754,12 @@ function renderTable(rows) {
   }).join('');
 }
 
-function renderSummaryStats() {
+function renderSummaryStats(rows = STATE.rows) {
   document.getElementById('statFiles').textContent = STATE.fileCount;
-  document.getElementById('statItems').textContent = STATE.rows.length;
+  document.getElementById('statItems').textContent = rows.length;
 
   const byCurrency = new Map();
-  for (const r of STATE.rows) {
+  for (const r of rows) {
     const c = r.currency || 'KRW';
     byCurrency.set(c, (byCurrency.get(c) || 0) + r.totalAmount);
   }
@@ -731,15 +809,15 @@ function renderWarnings(warnings) {
 
 /* ── EXCEL EXPORT ────────────────────────────────────────────── */
 
-function exportExcel() {
-  if (STATE.rows.length === 0) return;
+function exportExcel(rows) {
+  if (!rows || rows.length === 0) return;
 
   const wb = XLSX.utils.book_new();
 
   // Sheet 1: 원본
   const sheet1Data = [
     ['신고번호', '신고일자', '마스터 B/L', '화물관리번호', '입항일', '반입일', '거래처', 'HS코드', '품목명', '수량', '단가', '통화', '합계금액'],
-    ...STATE.rows.map(r => [
+    ...rows.map(r => [
       r.declNumber,
       r.declDate,
       { t: 's', v: r.masterBl || '' },
@@ -766,7 +844,7 @@ function exportExcel() {
   XLSX.utils.book_append_sheet(wb, ws1, '원본');
 
   // Sheet 2: 신고번호별 (적출국은 선적국 기준 문서 레벨)
-  const byDecl = groupAndSum(STATE.rows, 'declNumber', [
+  const byDecl = groupAndSum(rows, 'declNumber', [
     'declDate', 'masterBl', 'cargoControlNumber', 'arrivalDate', 'carryInDate',
     'vendor', 'currency', 'exportCountry',
   ]);
@@ -788,7 +866,7 @@ function exportExcel() {
 
   // Sheet 3: 월별 (적출국별 + 통화별)
   const monthMap = new Map();
-  for (const r of STATE.rows) {
+  for (const r of rows) {
     const key = `${r.declMonth || '(없음)'}__${r.exportCountry || ''}__${r.currency || 'KRW'}`;
     monthMap.set(key, (monthMap.get(key) || 0) + r.totalAmount);
   }
@@ -862,6 +940,7 @@ function showSection(id, visible) {
 
 function resetApp() {
   STATE.rows     = [];
+  STATE.filteredRows = [];
   STATE.warnings = [];
   STATE.fileCount = 0;
 
@@ -871,6 +950,7 @@ function resetApp() {
 
   showSection('summaryStats',   false);
   showSection('actionBar',      false);
+  showSection('filterPanel',    false);
   showSection('tableSection',   false);
   showSection('progressSection',false);
   showSection('warningsDetails',false);
@@ -882,4 +962,5 @@ function resetApp() {
   debugPanel.hidden = true;
   debugPanel.open   = false;
   document.getElementById('debugText').value = '';
+  resetFilterControls();
 }
