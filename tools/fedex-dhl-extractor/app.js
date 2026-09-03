@@ -242,7 +242,8 @@ function shouldRunOcr(text) {
   const compact = text.replace(/\s/g, '');
   const cidCount = (text.match(/\(cid:\d+\)/g) || []).length;
   const brokenCount = (text.match(/[�□]/g) || []).length;
-  return compact.length < 100 || cidCount > 10 || brokenCount > 20;
+  const slashCodeCount = (text.match(/\/(?:i)?\d{1,3}/g) || []).length;
+  return compact.length < 100 || cidCount > 10 || brokenCount > 20 || slashCodeCount > 80;
 }
 
 function classifyDocument(fileName, text) {
@@ -326,63 +327,72 @@ function parseFedExDuty(text, fileName, method) {
 }
 
 function parseDhlInvoice(text, fileName, method) {
-  const invoiceNumbers = unique([...text.matchAll(/\bINVOICE\s*(S\d+)\b/gi)].map(match => `INVOICE ${match[1]}`));
+  const invoiceNumbers = unique([...text.matchAll(/\bINVOICE\s+(S\d+)\b/gi)].map(match => match[1].toUpperCase()));
   const targets = invoiceNumbers.length ? invoiceNumbers : [''];
   const summaries = [];
   const charges = [];
   const reviews = [];
 
   for (const invoiceNumber of targets) {
-    const block = invoiceNumber ? blockAround(text, invoiceNumber, 5000) : text;
-    const invoiceDate = extractDateNear(block, /Invoice\s*Date|Date/i) || firstDate(block);
-    const shipmentNumber = firstMatch(block, [/Shipment\s*(?:Number|No\.?)\s*[:#]?\s*([A-Z0-9-]+)/i, /\b(\d{10})\b/]);
-    const subtotal = amountNear(block, /Subtotal|Sub\s*Total/i);
-    const vat = amountNear(block, /\bVAT\b|Tax/i);
-    const total = amountNear(block, /Total\s*KRW|Grand\s*Total|Total/i);
-    const invoiceCharges = extractDhlCharges(block, invoiceNumber, shipmentNumber, fileName);
+    const block = invoiceNumber ? dhlInvoiceBlock(text, invoiceNumber) : text;
+    const invoiceLabel = invoiceNumber ? `INVOICE ${invoiceNumber}` : '';
+    const invoiceDate = normalizeDate(firstMatch(block, [/INVOICE\s+DATE\s+([0-9]{1,2}-[A-Za-z]{3}-[0-9]{2,4})/i])) || extractDateNear(block, /Invoice\s*Date|Date/i) || firstDate(block);
+    const shipmentNumber = firstMatch(block, [/SHIPMENT\s+(S\d+)/i, /Shipment\s*(?:Number|No\.?)\s*[:#]?\s*([A-Z0-9-]+)/i]);
+    const subtotal = parseAmount(firstMatch(block, [/\bSUBTOTAL\s+([\d,]+(?:\.\d+)?)/i]));
+    const vat = parseAmount(firstMatch(block, [/\bVAT\s+([\d,]+(?:\.\d+)?)/i]));
+    const total = parseAmount(firstMatch(block, [/\bTOTAL\s+KRW\s+([\d,]+(?:\.\d+)?)/i]));
+    const invoiceCharges = extractDhlCharges(block, invoiceLabel, shipmentNumber, fileName);
     charges.push(...invoiceCharges);
 
     const zeroSum = invoiceCharges.filter(row => row['VAT Rate'] === 'Zero Rated').reduce((sum, row) => sum + (Number(row['Charge Amount']) || 0), 0);
     const tenSum = invoiceCharges.filter(row => row['VAT Rate'] === '10%').reduce((sum, row) => sum + (Number(row['Charge Amount']) || 0), 0);
     if (!invoiceNumber) reviews.push(reviewRow(fileName, '', 'Missing DHL invoice number', '', '', '', 'CHECK'));
-    if (subtotal != null && invoiceCharges.length && Math.abs((zeroSum + tenSum) - subtotal) > 1) reviews.push(reviewRow(fileName, invoiceNumber, 'DHL subtotal mismatch', subtotal, zeroSum + tenSum, zeroSum + tenSum - subtotal, 'CHECK'));
-    if (vat != null && tenSum && Math.abs(Math.round(tenSum * 0.1) - vat) > 1) reviews.push(reviewRow(fileName, invoiceNumber, 'DHL VAT mismatch', vat, Math.round(tenSum * 0.1), Math.round(tenSum * 0.1) - vat, 'CHECK'));
-    if (subtotal != null && vat != null && total != null && Math.abs((subtotal + vat) - total) > 1) reviews.push(reviewRow(fileName, invoiceNumber, 'DHL total mismatch', total, subtotal + vat, subtotal + vat - total, 'CHECK'));
+    if (!invoiceCharges.length) reviews.push(reviewRow(fileName, invoiceLabel, 'Missing DHL charge detail', 'Charge rows', '', '', 'CHECK'));
+    if (subtotal != null && invoiceCharges.length && Math.abs((zeroSum + tenSum) - subtotal) > 1) reviews.push(reviewRow(fileName, invoiceLabel, 'DHL subtotal mismatch', subtotal, zeroSum + tenSum, zeroSum + tenSum - subtotal, 'CHECK'));
+    if (vat != null && tenSum && Math.abs(Math.round(tenSum * 0.1) - vat) > 1) reviews.push(reviewRow(fileName, invoiceLabel, 'DHL VAT mismatch', vat, Math.round(tenSum * 0.1), Math.round(tenSum * 0.1) - vat, 'CHECK'));
+    if (subtotal != null && vat != null && total != null && Math.abs((subtotal + vat) - total) > 1) reviews.push(reviewRow(fileName, invoiceLabel, 'DHL total mismatch', total, subtotal + vat, subtotal + vat - total, 'CHECK'));
 
-    summaries.push(summaryRow({ carrier: 'DHL', documentType: 'FREIGHT_INVOICE', invoiceNumber, invoiceDate, shipmentNumber, subtotal, vat, totalKrw: total, sourceFile: fileName, extractionMethod: method, reviewStatus: reviews.some(row => row['Invoice/AWB'] === invoiceNumber) ? 'CHECK' : 'OK' }));
+    summaries.push(summaryRow({ carrier: 'DHL', documentType: 'FREIGHT_INVOICE', invoiceNumber: invoiceLabel, invoiceDate, shipmentNumber, subtotal, vat, totalKrw: total, sourceFile: fileName, extractionMethod: method, reviewStatus: reviews.some(row => row['Invoice/AWB'] === invoiceLabel) ? 'CHECK' : 'OK' }));
   }
   return { summaries, charges, reviews, status: reviews.length ? 'CHECK' : 'OK' };
 }
 
 function extractDhlCharges(text, invoiceNumber, shipmentNumber, fileName) {
   const rows = [];
-  const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+  const chargeStart = text.search(/CHARGES\s*\n\s*DESCRIPTION/i);
+  const totalStart = text.search(/TOTAL\s+CHARGES/i);
+  const scope = chargeStart >= 0 && totalStart > chargeStart ? text.slice(chargeStart, totalStart) : text;
+  const lines = scope.split('\n').map(line => line.trim()).filter(Boolean);
   for (const line of lines) {
-    if (!/[A-Za-z가-힣]/.test(line) || !/\d[\d,]+/.test(line)) continue;
-    if (/subtotal|total|invoice|shipment|vat|tax\s*invoice/i.test(line)) continue;
-    const amounts = [...line.matchAll(/-?\(?\d[\d,]*(?:\.\d+)?\)?/g)].map(match => parseAmount(match[0])).filter(value => value != null);
-    const amount = amounts[amounts.length - 1];
+    if (/^CHARGES$|^DESCRIPTION\b|DHL GLOBAL FORWARDING/i.test(line)) continue;
+    const row = line.match(/^(.+?)\s+(Zero\s+Rated|10%)\s+([\d,]+(?:\.\d+)?)$/i);
+    if (!row) continue;
+    const amount = parseAmount(row[3]);
     if (amount == null || Math.abs(amount) < 1) continue;
-    const desc = line.replace(/-?\(?\d[\d,]*(?:\.\d+)?\)?/g, '').replace(/\bKRW\b/gi, '').trim();
+    const desc = row[1].replace(/\s+/g, ' ').trim();
     if (desc.length < 3) continue;
-    const vatRate = /zero\s*rated|영세|0%/i.test(line) ? 'Zero Rated' : /10\s*%|VAT/i.test(line) ? '10%' : '';
+    const vatRate = /zero\s*rated/i.test(row[2]) ? 'Zero Rated' : '10%';
     rows.push(chargeRow({ carrier: 'DHL', documentType: 'FREIGHT_INVOICE', invoiceNumber, shipmentNumber, chargeDescription: desc, vatRate, chargeAmount: amount, sourceFile: fileName }));
   }
   return rows;
 }
 
 function parseDhlEtradebill(text, fileName, method) {
-  const approval = firstMatch(text, [/승인번호\s*[:：]?\s*([0-9-]{12,})/i, /Approval\s*(?:Number|No\.?)\s*[:#]?\s*([0-9-]{12,})/i]);
+  const approval = firstMatch(text, [/승인번호\s*[:：]?\s*([A-Za-z0-9-]{12,})/i, /Approval\s*(?:Number|No\.?)\s*[:#]?\s*([A-Za-z0-9-]{12,})/i]);
   const issueDate = extractDateNear(text, /작성일자|Issue\s*Date|Date/i) || firstDate(text);
-  const supplierName = textAfterLabel(text, /공급자\s*상호|Supplier/i);
-  const supplierRegNo = firstMatch(text, [/공급자[\s\S]{0,120}?(\d{3}-\d{2}-\d{5})/, /\b(\d{3}-\d{2}-\d{5})\b/]);
-  const buyerRegNo = firstMatch(text, [/공급받는자[\s\S]{0,120}?(\d{3}-\d{2}-\d{5})/]);
-  const supplyAmount = amountNear(text, /공급가액|Supply\s*Amount/i);
-  let vat = amountNear(text, /세액|VAT|Tax\s*Amount/i);
-  const total = amountNear(text, /합계금액|Total\s*Amount|Grand\s*Total/i);
+  const regNos = [...text.matchAll(/\b(\d{3})[\s-]+(\d{2})[\s-]+(\d{5})\b/g)].map(match => `${match[1]}-${match[2]}-${match[3]}`);
+  const supplierRegNo = regNos[0] || '';
+  const buyerRegNo = regNos[1] || '';
+  const lines = text.split('\n').map(line => line.trim()).filter(Boolean);
+  const supplierName = lineAfter(lines, supplierRegNo.replace(/-/g, ' ')) || textAfterLabel(text, /공급자\s*상호|Supplier/i);
+  const buyerName = lineAfter(lines, buyerRegNo.replace(/-/g, ' '));
+  const amounts = extractEtradebillAmounts(text);
+  const supplyAmount = amounts.supplyAmount;
+  let vat = amounts.vat;
+  const total = amounts.total;
   const taxType = /영세|Zero\s*Rated|0\s*%/i.test(text) ? 'Zero Rated' : 'Taxable';
   if (vat == null && taxType === 'Zero Rated') vat = 0;
-  const itemInfo = textAfterLabel(text, /품목|Item|참조정보|Reference/i);
+  const itemInfo = firstMatch(text, [/\bNO\.\s*([^\n]+)/i, /참조정보\s*\n([^\n]+)/i, /품목\s*[:：]?\s*([^\n]+)/i]);
   const reviews = [];
   if (!approval) reviews.push(reviewRow(fileName, '', 'Missing approval number', '', '', '', 'CHECK'));
   if (supplyAmount == null) reviews.push(reviewRow(fileName, approval, 'Missing supply amount', '', '', '', 'CHECK'));
@@ -392,7 +402,7 @@ function parseDhlEtradebill(text, fileName, method) {
   }
 
   return {
-    summaries: [summaryRow({ carrier: 'DHL', documentType: 'ETRADEBILL', approvalNumber: approval, approvalLast8: approval ? approval.replace(/\D/g, '').slice(-8) : '', issueDate, supplierName, supplierRegNo, buyerRegNo, supplyAmount, vat, totalAmount: total, taxType, itemInfo, sourceFile: fileName, extractionMethod: method, reviewStatus: reviews.length ? 'CHECK' : 'OK' })],
+    summaries: [summaryRow({ carrier: 'DHL', documentType: 'ETRADEBILL', approvalNumber: approval, approvalLast8: approval ? approval.replace(/\D/g, '').slice(-8) : '', issueDate, supplierName, buyerName, supplierRegNo, buyerRegNo, supplyAmount, vat, totalAmount: total, taxType, itemInfo, sourceFile: fileName, extractionMethod: method, reviewStatus: reviews.length ? 'CHECK' : 'OK' })],
     charges: [],
     reviews,
     status: reviews.length ? 'CHECK' : 'OK',
@@ -438,6 +448,7 @@ function summaryRow(data) {
     작성일자: data.issueDate || '',
     '공급자 상호': data.supplierName || '',
     '공급자 사업자등록번호': data.supplierRegNo || '',
+    '공급받는자 상호': data.buyerName || '',
     '공급받는자 사업자등록번호': data.buyerRegNo || '',
     공급가액: valueOrBlank(data.supplyAmount),
     세액: valueOrBlank(data.vat),
@@ -539,11 +550,11 @@ function appendSheet(wb, name, rows) {
 
 function getColumns(rows, fallback) {
   const presets = {
-    summary: ['Carrier', 'Document Type', 'Invoice Number', 'Invoice Date', 'Shipment Period', 'Currency', 'Grand Total', 'Shipment Number', 'Subtotal', 'VAT', 'Total KRW', 'Approval Number', 'Approval Last 8 Digits', '작성일자', '공급자 상호', '공급자 사업자등록번호', '공급받는자 사업자등록번호', '공급가액', '세액', '합계금액', '과세/영세율 구분', '품목 또는 참조정보', 'Source File', 'Extraction Method', 'Review Status'],
+    summary: ['Carrier', 'Document Type', 'Invoice Number', 'Invoice Date', 'Shipment Period', 'Currency', 'Grand Total', 'Shipment Number', 'Subtotal', 'VAT', 'Total KRW', 'Approval Number', 'Approval Last 8 Digits', '작성일자', '공급자 상호', '공급자 사업자등록번호', '공급받는자 상호', '공급받는자 사업자등록번호', '공급가액', '세액', '합계금액', '과세/영세율 구분', '품목 또는 참조정보', 'Source File', 'Extraction Method', 'Review Status'],
     charges: ['Carrier', 'Document Type', 'Invoice Number', 'AWB Number', 'Ship Date', 'Customs Entry Date', 'Recipient', 'FedEx Reference', 'Charge', 'Amount', 'Shipment Number', 'Charge Description', 'VAT Rate', 'Charge Amount', 'Source File'],
     review: ['File', 'Invoice/AWB', 'Reason', 'Expected', 'Extracted', 'Difference', 'Action'],
     File_Index: ['File', 'SHA-256', 'Document Type', 'Pages', 'Extraction Method', 'Duplicate Of', 'Status'],
-    Invoice_Summary: ['Carrier', 'Document Type', 'Invoice Number', 'Invoice Date', 'Shipment Period', 'Currency', 'Grand Total', 'Shipment Number', 'Subtotal', 'VAT', 'Total KRW', 'Approval Number', 'Approval Last 8 Digits', '작성일자', '공급자 상호', '공급자 사업자등록번호', '공급받는자 사업자등록번호', '공급가액', '세액', '합계금액', '과세/영세율 구분', '품목 또는 참조정보', 'Source File', 'Extraction Method', 'Review Status'],
+    Invoice_Summary: ['Carrier', 'Document Type', 'Invoice Number', 'Invoice Date', 'Shipment Period', 'Currency', 'Grand Total', 'Shipment Number', 'Subtotal', 'VAT', 'Total KRW', 'Approval Number', 'Approval Last 8 Digits', '작성일자', '공급자 상호', '공급자 사업자등록번호', '공급받는자 상호', '공급받는자 사업자등록번호', '공급가액', '세액', '합계금액', '과세/영세율 구분', '품목 또는 참조정보', 'Source File', 'Extraction Method', 'Review Status'],
     Charge_Detail: ['Carrier', 'Document Type', 'Invoice Number', 'AWB Number', 'Ship Date', 'Customs Entry Date', 'Recipient', 'FedEx Reference', 'Charge', 'Amount', 'Shipment Number', 'Charge Description', 'VAT Rate', 'Charge Amount', 'Source File'],
     Review: ['File', 'Invoice/AWB', 'Reason', 'Expected', 'Extracted', 'Difference', 'Action'],
   };
@@ -573,6 +584,45 @@ function amountNear(text, labelRe) {
   return values.length ? values[values.length - 1] : null;
 }
 
+function dhlInvoiceBlock(text, invoiceNumber) {
+  const pageRe = new RegExp(`INVOICE\\s+${escapeRegExp(invoiceNumber)}\\s+Page\\s+\\d+\\s+of\\s+\\d+`, 'gi');
+  const allInvoiceRe = /\bINVOICE\s+S\d+\s+Page\s+\d+\s+of\s+\d+/gi;
+  const pageMatches = [...text.matchAll(pageRe)];
+  const allMatches = [...text.matchAll(allInvoiceRe)];
+  if (!pageMatches.length) return blockAround(text, invoiceNumber, 5000);
+  return pageMatches.map(match => {
+    const next = allMatches.find(item => item.index > match.index);
+    return text.slice(match.index, next ? next.index : text.length);
+  }).join('\n');
+}
+
+function extractEtradebillAmounts(text) {
+  const pairMatches = [...text.matchAll(/(\d{1,3}(?:,\d{3})+)\s+(\d{1,3}(?:,\d{3})+)/g)]
+    .map(match => ({ index: match.index, first: parseAmount(match[1]), second: parseAmount(match[2]) }));
+  const headerIndex = text.search(/공급가액\s+세액/);
+  const supplyPair = pairMatches.find(item => headerIndex < 0 || item.index > headerIndex);
+  const totalIndex = text.search(/합계금액/);
+  const totals = [...text.slice(Math.max(0, totalIndex)).matchAll(/(\d{1,3}(?:,\d{3})+)/g)].map(match => parseAmount(match[1]));
+  const expectedTotal = supplyPair && supplyPair.first != null && supplyPair.second != null ? supplyPair.first + supplyPair.second : null;
+  let total = null;
+  if (expectedTotal != null) total = totals.find(value => value === expectedTotal) || null;
+  if (total == null && expectedTotal != null && text.includes(String(expectedTotal).replace(/\B(?=(\d{3})+(?!\d))/g, ','))) total = expectedTotal;
+  return {
+    supplyAmount: supplyPair ? supplyPair.first : null,
+    vat: supplyPair ? supplyPair.second : null,
+    total,
+  };
+}
+
+function lineAfter(lines, value) {
+  if (!value) return '';
+  const normalizedValue = value.replace(/\D/g, '');
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (lines[i].replace(/\D/g, '') === normalizedValue) return lines[i + 1] || '';
+  }
+  return '';
+}
+
 function extractDateNear(text, labelRe) {
   const match = text.match(labelRe);
   if (!match) return '';
@@ -590,6 +640,12 @@ function normalizeDate(value) {
   if (m) return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
   m = raw.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
   if (m) return `${m[3]}-${pad2(m[2])}-${pad2(m[1])}`;
+  m = raw.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2}|\d{4})$/);
+  if (m) {
+    const month = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' }[m[2].toLowerCase()];
+    const year = m[3].length === 2 ? `20${m[3]}` : m[3];
+    if (month) return `${year}-${month}-${pad2(m[1])}`;
+  }
   const date = new Date(raw);
   if (!Number.isNaN(date.getTime())) return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
   return raw;
