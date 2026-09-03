@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FedEx / DHL Extractor</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="tool-nav">
+    <a href="/">← 전체 도구</a>
+    <span><a href="/support/">오류 신고</a> · LVMH Fashion Group 업무 자동화 도구</span>
+  </nav>
+
+  <main class="app">
+    <header class="hero">
+      <span class="badge">PDF TO EXCEL</span>
+      <h1>FedEx / DHL Extractor</h1>
+      <p>FedEx Duty·Freight, DHL 마감 인보이스, DHL eTradebill PDF를 Excel 출력 구조로 정리하는 신규 도구입니다.</p>
+      <span class="privacy">PDF는 브라우저 안에서만 처리되며 서버에 업로드되거나 저장되지 않습니다.</span>
+    </header>
+
+    <section class="notice">
+      <strong>개발 준비 상태</strong>
+      <p>현재 페이지에는 구현 범위와 검증 기준이 먼저 반영되어 있습니다. 실제 PDF 추출 기능은 이 기준으로 구현한 뒤 사용 가능 상태로 전환합니다.</p>
+    </section>
+
+    <section class="spec-grid" aria-label="FedEx DHL Extractor 구현 범위">
+      <article>
+        <span>01</span>
+        <h2>문서 자동 분류</h2>
+        <p>파일명과 PDF 본문을 함께 확인해 FedEx Freight, FedEx Duty, DHL 마감 인보이스, DHL eTradebill, 미확인 문서로 구분합니다.</p>
+      </article>
+      <article>
+        <span>02</span>
+        <h2>브라우저 내부 처리</h2>
+        <p>PDF.js 텍스트 추출을 우선 사용하고, 텍스트가 부족하거나 깨진 경우 필요한 페이지만 OCR 대상으로 분류합니다.</p>
+      </article>
+      <article>
+        <span>03</span>
+        <h2>Excel 출력</h2>
+        <p>File_Index, Invoice_Summary, Charge_Detail, Review 시트로 나누어 처리 결과와 검토 필요 항목을 함께 저장합니다.</p>
+      </article>
+      <article>
+        <span>04</span>
+        <h2>정규화 및 검증</h2>
+        <p>금액, 날짜, Invoice Number, AWB Number를 정규화하고 합계 불일치나 필수값 누락은 CHECK/ERROR로 표시합니다.</p>
+      </article>
+    </section>
+
+    <section class="workflow">
+      <div class="section-heading">
+        <span class="section-kicker">처리 흐름</span>
+        <h2>업로드부터 Review까지</h2>
+      </div>
+      <ol>
+        <li><strong>PDF 추가</strong><span>FedEx와 DHL PDF를 섞어서 여러 개 업로드합니다.</span></li>
+        <li><strong>중복 제거</strong><span>SHA-256 해시가 같은 파일은 최초 파일만 처리합니다.</span></li>
+        <li><strong>텍스트 추출/OCR</strong><span>PDF 텍스트 레이어를 먼저 읽고 필요한 페이지만 OCR을 실행합니다.</span></li>
+        <li><strong>검증</strong><span>문서별 합계 검증 후 OK, CHECK, ERROR 상태를 부여합니다.</span></li>
+        <li><strong>Excel 다운로드</strong><span>검토 대상은 Review 시트에 원인과 대상 식별자를 남깁니다.</span></li>
+      </ol>
+    </section>
+
+    <section class="output">
+      <div class="section-heading">
+        <span class="section-kicker">Excel 시트</span>
+        <h2>출력 구조</h2>
+      </div>
+      <div class="sheet-list">
+        <div><strong>File_Index</strong><span>파일명, 해시, 문서 유형, 페이지 수, 중복 여부, 처리 상태</span></div>
+        <div><strong>Invoice_Summary</strong><span>FedEx, DHL 마감 인보이스, eTradebill 요약 정보</span></div>
+        <div><strong>Charge_Detail</strong><span>FedEx 운송장별 charge와 DHL charge 상세 행</span></div>
+        <div><strong>Review</strong><span>CHECK/ERROR 사유, 기대값, 추출값, 차이, 조치 내용</span></div>
+      </div>
+    </section>
+
+    <footer>Created by <strong>Minsu Bae</strong><span>·</span>브라우저 내부 처리</footer>
+  </main>
+</body>
+</html>

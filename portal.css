@@ -260,6 +260,7 @@ main {
 .tool-icon--green { background: #e7f1ea; color: #24633f; }
 .tool-icon--yellow { background: #fff4dc; color: #805b00; }
 .tool-icon--rose { background: #f8e8e6; color: #84413d; }
+.tool-icon--blue { background: #e7eef7; color: #245075; }
 
 .status {
   border-radius: 999px;
