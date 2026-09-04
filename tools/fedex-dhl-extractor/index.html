@@ -20,7 +20,7 @@
     <header class="hero">
       <span class="badge">VAT RECON CHECK</span>
       <h1>FedEx / DHL Extractor</h1>
-      <p>FedEx PDF를 Duty, Freight, Unknown, Duplicate로 빠짐없이 분류하고 VAT 레콘 대상 금액만 Excel로 정리합니다.</p>
+      <p>FedEx PDF를 Duty, Freight, Unknown, Duplicate로 분류하고 Duty는 AWB별 VAT 레콘 금액으로 정리합니다.</p>
       <span class="privacy">PDF는 브라우저 안에서만 처리되며 서버에 업로드되거나 저장되지 않습니다.</span>
     </header>
 
@@ -88,7 +88,7 @@
         <h2>지원 문서와 Excel 시트</h2>
       </div>
       <div class="sheet-list">
-        <div><strong>FedEx Duty</strong><span>Invoice Number, Invoice Date, Duty VAT, Handling VAT, Total VAT만 추출</span></div>
+        <div><strong>FedEx Duty</strong><span>같은 Invoice Number 안에서도 AWB별로 Duty VAT, Handling VAT, Total VAT를 추출</span></div>
         <div><strong>FedEx Freight</strong><span>VAT Extraction을 Excluded로 기록하고 오류 없이 제외 사유 표시</span></div>
         <div><strong>FedEx Unknown</strong><span>Duty/Freight 분류 실패 시 1파일 1행으로 CHECK 기록</span></div>
         <div><strong>FedEx_Invoice_Check</strong><span>Invoice Summary 정보를 합쳐 모든 FedEx PDF를 Duty, Freight, Unknown, Duplicate 중 하나로 기록</span></div>
