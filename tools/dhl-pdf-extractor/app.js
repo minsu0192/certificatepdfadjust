@@ -301,8 +301,11 @@ function parseDhlEtradebill(text, fileName, method) {
   let vat = amounts.vat;
   const total = amounts.total;
   const extra = extractEtradebillExtraAmounts(text);
+  if (extra.settlementTotal == null && supplyAmount != null && extra.reimbursedExpense != null) {
+    extra.settlementTotal = supplyAmount + extra.reimbursedExpense;
+  }
   const houseBlNumber = extractHouseBlNumber(text);
-  const taxType = /영세|Zero\s*Rated|0\s*%/i.test(text) ? 'Zero Rated' : 'Taxable';
+  const taxType = vat === 0 || /Zero\s*Rated|0\s*%/i.test(text) ? 'Zero Rated' : 'Taxable';
   if (vat == null && taxType === 'Zero Rated') vat = 0;
   const reason = [
     !issueNumber ? 'Missing issue number' : '',
@@ -479,19 +482,41 @@ function dhlInvoiceBlock(text, invoiceNumber) {
 }
 
 function extractEtradebillAmounts(text) {
-  const pairMatches = [...text.matchAll(/(\d{1,3}(?:,\d{3})+)\s+(\d{1,3}(?:,\d{3})+)/g)]
-    .map(match => ({ index: match.index, first: parseAmount(match[1]), second: parseAmount(match[2]) }));
   const headerIndex = text.search(/공급가액\s+세액/);
-  const supplyPair = pairMatches.find(item => headerIndex < 0 || item.index > headerIndex);
+  const headerScope = headerIndex >= 0 ? text.slice(headerIndex, headerIndex + 1800).replace(/\n/g, ' ') : text.replace(/\n/g, ' ');
+  const firstDateInScope = headerScope.search(/\b\d{4}[./-]\d{1,2}[./-]\d{1,2}\b/);
+  const amountScope = firstDateInScope >= 0 ? headerScope.slice(0, firstDateInScope) : headerScope.slice(0, 900);
+  const headerAmounts = monetaryMatches(amountScope);
+  let supplyAmount = headerAmounts.length ? headerAmounts[0] : null;
+  let vat = headerAmounts.length > 1 ? headerAmounts[1] : null;
+
+  if (supplyAmount == null && headerIndex >= 0) {
+    const firstItemIndex = headerScope.search(/\b\d{2}\s+\d{2}\s+[A-Za-z가-힣]/);
+    const preItemScope = firstItemIndex >= 0 ? headerScope.slice(0, firstItemIndex) : headerScope;
+    const preItemAmounts = monetaryMatches(preItemScope);
+    supplyAmount = preItemAmounts.length ? preItemAmounts[0] : null;
+    vat = null;
+  }
+
+  if (supplyAmount == null) {
+    const pairMatches = [...text.matchAll(/(\d{1,3}(?:,\d{3})+)\s+(\d{1,3}(?:,\d{3})+)/g)]
+      .map(match => ({ index: match.index, first: parseAmount(match[1]), second: parseAmount(match[2]) }));
+    const supplyPair = pairMatches.find(item => headerIndex < 0 || item.index > headerIndex);
+    supplyAmount = supplyPair ? supplyPair.first : null;
+    vat = supplyPair ? supplyPair.second : null;
+  }
+
   const totalIndex = text.search(/합계금액/);
-  const totals = [...text.slice(Math.max(0, totalIndex)).matchAll(/(\d{1,3}(?:,\d{3})+)/g)].map(match => parseAmount(match[1]));
-  const expectedTotal = supplyPair && supplyPair.first != null && supplyPair.second != null ? supplyPair.first + supplyPair.second : null;
+  const totals = monetaryMatches(text.slice(Math.max(0, totalIndex), totalIndex >= 0 ? totalIndex + 1200 : text.length));
+  if (vat == null && supplyAmount != null && totals.includes(supplyAmount)) vat = 0;
+  const expectedTotal = supplyAmount != null && vat != null ? supplyAmount + vat : null;
   let total = null;
   if (expectedTotal != null) total = totals.find(value => value === expectedTotal) || null;
   if (total == null && expectedTotal != null && text.includes(String(expectedTotal).replace(/\B(?=(\d{3})+(?!\d))/g, ','))) total = expectedTotal;
+  if (total == null && vat === 0) total = supplyAmount;
   return {
-    supplyAmount: supplyPair ? supplyPair.first : null,
-    vat: supplyPair ? supplyPair.second : null,
+    supplyAmount,
+    vat,
     total,
   };
 }
@@ -504,14 +529,18 @@ function extractEtradebillExtraAmounts(text) {
   const reimbursedValues = reimbursedLine ? monetaryMatches(reimbursedLine) : [];
   const settlementLabelIndex = scope.findIndex(line => /총정산금액/i.test(line));
   const settlementValues = settlementLabelIndex >= 0 ? monetaryMatches(scope.slice(settlementLabelIndex).join(' ')) : [];
+  const flatText = String(text || '').replace(/\s+/g, ' ');
+  const wfAmount = parseAmount(firstMatch(flatText, [/W\/F\s*;?\s*(\d{1,3}(?:,\d{3})+)/i]));
+  const totalAmount = parseAmount(firstMatch(flatText, [/총\s*합계\s*(\d{1,3}(?:,\d{3})+)/i, /총정산금액\s*(\d{1,3}(?:,\d{3})+)/i]));
   return {
-    reimbursedExpense: reimbursedValues.length ? reimbursedValues[reimbursedValues.length - 1] : null,
-    settlementTotal: settlementValues.length ? settlementValues[settlementValues.length - 1] : null,
+    reimbursedExpense: reimbursedValues.length ? reimbursedValues[reimbursedValues.length - 1] : wfAmount,
+    settlementTotal: settlementValues.length ? settlementValues[settlementValues.length - 1] : totalAmount,
   };
 }
 
 function extractHouseBlNumber(text) {
   const direct = firstMatch(text, [
+    /\bNO\.?\s*([A-Z]{1,6}\d{4,}[A-Z0-9.-]*)/i,
     /House\s*B\/L\s*번호\s*[:：]?\s*([A-Z0-9][A-Z0-9.-]{4,})/i,
     /\bHAWB\s*[:：]?\s*([A-Z0-9][A-Z0-9.-]{4,})/i,
   ]);
