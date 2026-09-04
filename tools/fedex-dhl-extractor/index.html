@@ -77,9 +77,7 @@
     <section class="results" id="results" hidden>
       <div class="result-tabs">
         <button class="tab is-active" data-tab="fedex" type="button">FedEx Invoice Check</button>
-        <button class="tab" data-tab="summary" type="button">Invoice Summary</button>
-        <button class="tab" data-tab="charges" type="button">Charge Detail</button>
-        <button class="tab" data-tab="review" type="button">Review</button>
+        <button class="tab" data-tab="files" type="button">File Index</button>
       </div>
       <div class="table-wrap"><table><thead id="resultHead"></thead><tbody id="resultBody"></tbody></table></div>
     </section>
@@ -93,12 +91,8 @@
         <div><strong>FedEx Duty</strong><span>Invoice Number, Invoice Date, Duty VAT, Handling VAT, Total VAT만 추출</span></div>
         <div><strong>FedEx Freight</strong><span>VAT Extraction을 Excluded로 기록하고 오류 없이 제외 사유 표시</span></div>
         <div><strong>FedEx Unknown</strong><span>Duty/Freight 분류 실패 시 1파일 1행으로 CHECK 기록</span></div>
-        <div><strong>DHL 마감 인보이스</strong><span>동일 Invoice Number 병합, VAT/Subtotal/Total 검증</span></div>
-        <div><strong>DHL eTradebill</strong><span>승인번호, 사업자번호, 공급가액, 세액, 합계금액 검증</span></div>
-        <div><strong>FedEx_Invoice_Check</strong><span>모든 FedEx PDF를 Duty, Freight, Unknown, Duplicate 중 하나로 기록</span></div>
+        <div><strong>FedEx_Invoice_Check</strong><span>Invoice Summary 정보를 합쳐 모든 FedEx PDF를 Duty, Freight, Unknown, Duplicate 중 하나로 기록</span></div>
         <div><strong>File_Index</strong><span>파일명, 해시, 문서 유형, 페이지 수, 중복 여부, 처리 상태</span></div>
-        <div><strong>Invoice_Summary</strong><span>FedEx, DHL 마감 인보이스, eTradebill 요약 정보</span></div>
-        <div><strong>Review</strong><span>CHECK/ERROR 사유, 기대값, 추출값, 차이, 조치 내용</span></div>
       </div>
     </section>
 

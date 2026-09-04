@@ -94,11 +94,16 @@ function setupActions() {
 function setupTabs() {
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(item => item.classList.remove('is-active'));
-      tab.classList.add('is-active');
       STATE.activeTab = tab.dataset.tab;
+      setActiveTabButton(STATE.activeTab);
       renderResults();
     });
+  });
+}
+
+function setActiveTabButton(tabName) {
+  document.querySelectorAll('.tab').forEach(item => {
+    item.classList.toggle('is-active', item.dataset.tab === tabName);
   });
 }
 
@@ -119,6 +124,8 @@ async function processFiles() {
   STATE.summaries = [];
   STATE.charges = [];
   STATE.reviews = [];
+  STATE.activeTab = 'fedex';
+  setActiveTabButton('fedex');
   show('progress', true);
   show('summary', false);
   show('actions', false);
@@ -291,7 +298,7 @@ function parseFedExFreight(text, fileName, method) {
   const status = reviews.length ? 'CHECK' : 'OK';
   const reason = reviews.length ? reviews.map(row => row.Reason).join('; ') : 'Freight Invoice - No VAT reconciliation required';
   return {
-    fedexChecks: [fedexCheckRow({ invoiceNumber, invoiceDate, documentType: 'FREIGHT', vatExtraction: 'Excluded', reason, sourceFile: fileName, status })],
+    fedexChecks: [fedexCheckRow({ invoiceNumber, invoiceDate, currency, invoiceTotal: total, documentType: 'FREIGHT', vatExtraction: 'Excluded', reason, sourceFile: fileName, status })],
     summaries: [summaryRow({ carrier: 'FedEx', documentType: 'FREIGHT', invoiceNumber, invoiceDate, shipmentPeriod, currency, grandTotal: total, sourceFile: fileName, extractionMethod: method, reviewStatus: reviews.length ? 'CHECK' : 'OK' })],
     charges: [],
     reviews,
@@ -302,6 +309,8 @@ function parseFedExFreight(text, fileName, method) {
 function parseFedExDuty(text, fileName, method) {
   const invoiceNumber = firstMatch(text, [/Invoice\s*(?:Number|No\.?)\s*[:#]?\s*(\d-\d{3}-\d{5})/i, /\b\d-\d{3}-\d{5}\b/]);
   const invoiceDate = extractDateNear(text, /Invoice\s*Date/i) || firstDate(text);
+  const invoiceTotal = amountNear(text, /Grand\s*Total|Total\s*Amount\s*Due|Amount\s*Due/i);
+  const currency = extractCurrency(text);
   const dutyVat = sumAmountsForLabel(text, /VAT\/Consumption\s*Tax/i);
   const handlingVat = sumAmountsForLabel(text, /Korea\s*VAT/i);
   const totalVat = sumPresentAmounts([dutyVat, handlingVat]);
@@ -312,8 +321,8 @@ function parseFedExDuty(text, fileName, method) {
   if (handlingVat == null) reviews.push(reviewRow(fileName, invoiceNumber, 'Missing FedEx handling VAT', 'Korea VAT', '', '', 'CHECK'));
   const status = reviews.length ? 'CHECK' : 'OK';
   return {
-    fedexChecks: [fedexCheckRow({ invoiceNumber, invoiceDate, documentType: 'DUTY', vatExtraction: 'Included', dutyVat, handlingVat, totalVat, sourceFile: fileName, status })],
-    summaries: [summaryRow({ carrier: 'FedEx', documentType: 'DUTY', invoiceNumber, invoiceDate, vat: totalVat, sourceFile: fileName, extractionMethod: method, reviewStatus: status })],
+    fedexChecks: [fedexCheckRow({ invoiceNumber, invoiceDate, currency, invoiceTotal, documentType: 'DUTY', vatExtraction: 'Included', dutyVat, handlingVat, totalVat, sourceFile: fileName, status })],
+    summaries: [summaryRow({ carrier: 'FedEx', documentType: 'DUTY', invoiceNumber, invoiceDate, currency, grandTotal: invoiceTotal, vat: totalVat, sourceFile: fileName, extractionMethod: method, reviewStatus: status })],
     charges: [],
     reviews,
     status,
@@ -323,10 +332,12 @@ function parseFedExDuty(text, fileName, method) {
 function parseFedExUnknown(text, fileName, method) {
   const invoiceNumber = firstMatch(text, [/Invoice\s*(?:Number|No\.?)\s*[:#]?\s*(\d-\d{3}-\d{5})/i, /\b\d-\d{3}-\d{5}\b/]);
   const invoiceDate = extractDateNear(text, /Invoice\s*Date/i) || firstDate(text);
+  const invoiceTotal = amountNear(text, /Grand\s*Total|Total\s*Amount\s*Due|Amount\s*Due/i);
+  const currency = extractCurrency(text);
   const reason = 'FedEx document type could not be determined';
   return {
-    fedexChecks: [fedexCheckRow({ invoiceNumber, invoiceDate, documentType: 'UNKNOWN', vatExtraction: 'Review', reason, sourceFile: fileName, status: 'CHECK' })],
-    summaries: [summaryRow({ carrier: 'FedEx', documentType: 'UNKNOWN', invoiceNumber, invoiceDate, sourceFile: fileName, extractionMethod: method, reviewStatus: 'CHECK' })],
+    fedexChecks: [fedexCheckRow({ invoiceNumber, invoiceDate, currency, invoiceTotal, documentType: 'UNKNOWN', vatExtraction: 'Review', reason, sourceFile: fileName, status: 'CHECK' })],
+    summaries: [summaryRow({ carrier: 'FedEx', documentType: 'UNKNOWN', invoiceNumber, invoiceDate, currency, grandTotal: invoiceTotal, sourceFile: fileName, extractionMethod: method, reviewStatus: 'CHECK' })],
     charges: [],
     reviews: [reviewRow(fileName, invoiceNumber, reason, 'DUTY or FREIGHT', '', '', 'CHECK')],
     status: 'CHECK',
@@ -512,6 +523,8 @@ function fedexCheckRow(data) {
     'Vendor Name': 'FedEx',
     'Invoice Number': data.invoiceNumber || '',
     'Invoice Date': data.invoiceDate || '',
+    Currency: data.currency || '',
+    'Invoice Total': valueOrBlank(data.invoiceTotal),
     'Document Type': data.documentType || '',
     'VAT Extraction': data.vatExtraction || '',
     'Duty VAT': valueOrBlank(data.dutyVat),
@@ -570,7 +583,7 @@ function renderSummary() {
 }
 
 function renderResults() {
-  const data = STATE.activeTab === 'fedex' ? STATE.fedexChecks : STATE.activeTab === 'charges' ? STATE.charges : STATE.activeTab === 'review' ? STATE.reviews : STATE.summaries;
+  const data = STATE.activeTab === 'files' ? STATE.fileIndex : sortedFedExChecks();
   const columns = getColumns(data, STATE.activeTab);
   byId('resultHead').innerHTML = `<tr>${columns.map(col => `<th>${esc(col)}</th>`).join('')}</tr>`;
   byId('resultBody').innerHTML = data.map(row => `<tr class="${row.Status === 'CHECK' || row['Review Status'] === 'CHECK' || row.Action === 'CHECK' ? 'row-check' : row.Status === 'ERROR' || row.Action === 'ERROR' ? 'row-error' : row.Status === 'DUPLICATE' ? 'row-duplicate' : ''}">${columns.map(col => `<td>${esc(row[col])}</td>`).join('')}</tr>`).join('');
@@ -580,9 +593,6 @@ function exportExcel() {
   const wb = XLSX.utils.book_new();
   appendFedExCheckSheet(wb);
   appendSheet(wb, 'File_Index', STATE.fileIndex);
-  appendSheet(wb, 'Invoice_Summary', STATE.summaries);
-  appendSheet(wb, 'Charge_Detail', STATE.charges);
-  appendSheet(wb, 'Review', STATE.reviews);
   XLSX.writeFile(wb, `FedEx_DHL_Extraction_${timestamp()}.xlsx`);
 }
 
@@ -607,7 +617,7 @@ function appendFedExCheckSheet(wb) {
     ['Validation', `${stats.total} = ${stats.duty} + ${stats.freight} + ${stats.unknown} + ${stats.duplicate}`, stats.valid ? 'OK' : 'CHECK'],
     [],
     columns,
-    ...STATE.fedexChecks.map(row => columns.map(col => row[col] == null ? '' : row[col])),
+    ...sortedFedExChecks().map(row => columns.map(col => row[col] == null ? '' : row[col])),
   ];
   const ws = XLSX.utils.aoa_to_sheet(data);
   ws['!cols'] = columns.map(col => ({ wch: Math.max(12, Math.min(34, col.length + 6)) }));
@@ -617,15 +627,10 @@ function appendFedExCheckSheet(wb) {
 
 function getColumns(rows, fallback) {
   const presets = {
-    fedex: ['Vendor Name', 'Invoice Number', 'Invoice Date', 'Document Type', 'VAT Extraction', 'Duty VAT', 'Handling VAT', 'Total VAT', 'Reason', 'Source File', 'Status'],
-    summary: ['Carrier', 'Document Type', 'Invoice Number', 'Invoice Date', 'Shipment Period', 'Currency', 'Grand Total', 'Shipment Number', 'Subtotal', 'VAT', 'Total KRW', 'Approval Number', 'Approval Last 8 Digits', '작성일자', '공급자 상호', '공급자 사업자등록번호', '공급받는자 상호', '공급받는자 사업자등록번호', '공급가액', '세액', '합계금액', '과세/영세율 구분', '품목 또는 참조정보', 'Source File', 'Extraction Method', 'Review Status'],
-    charges: ['Recon Scope', 'Tax Invoice Vendor', 'Recon Key', 'Tax Base Candidate', 'VAT Candidate', 'Carrier', 'Document Type', 'Invoice Number', 'AWB Number', 'Ship Date', 'Customs Entry Date', 'Recipient', 'FedEx Reference', 'Charge', 'Amount', 'Shipment Number', 'Charge Description', 'VAT Rate', 'Charge Amount', 'Source File'],
-    review: ['File', 'Invoice/AWB', 'Reason', 'Expected', 'Extracted', 'Difference', 'Action'],
-    FedEx_Invoice_Check: ['Vendor Name', 'Invoice Number', 'Invoice Date', 'Document Type', 'VAT Extraction', 'Duty VAT', 'Handling VAT', 'Total VAT', 'Reason', 'Source File', 'Status'],
+    fedex: ['Vendor Name', 'Invoice Number', 'Invoice Date', 'Currency', 'Invoice Total', 'Document Type', 'VAT Extraction', 'Duty VAT', 'Handling VAT', 'Total VAT', 'Reason', 'Source File', 'Status'],
+    files: ['File', 'SHA-256', 'Document Type', 'Pages', 'Extraction Method', 'Duplicate Of', 'Status'],
+    FedEx_Invoice_Check: ['Vendor Name', 'Invoice Number', 'Invoice Date', 'Currency', 'Invoice Total', 'Document Type', 'VAT Extraction', 'Duty VAT', 'Handling VAT', 'Total VAT', 'Reason', 'Source File', 'Status'],
     File_Index: ['File', 'SHA-256', 'Document Type', 'Pages', 'Extraction Method', 'Duplicate Of', 'Status'],
-    Invoice_Summary: ['Carrier', 'Document Type', 'Invoice Number', 'Invoice Date', 'Shipment Period', 'Currency', 'Grand Total', 'Shipment Number', 'Subtotal', 'VAT', 'Total KRW', 'Approval Number', 'Approval Last 8 Digits', '작성일자', '공급자 상호', '공급자 사업자등록번호', '공급받는자 상호', '공급받는자 사업자등록번호', '공급가액', '세액', '합계금액', '과세/영세율 구분', '품목 또는 참조정보', 'Source File', 'Extraction Method', 'Review Status'],
-    Charge_Detail: ['Recon Scope', 'Tax Invoice Vendor', 'Recon Key', 'Tax Base Candidate', 'VAT Candidate', 'Carrier', 'Document Type', 'Invoice Number', 'AWB Number', 'Ship Date', 'Customs Entry Date', 'Recipient', 'FedEx Reference', 'Charge', 'Amount', 'Shipment Number', 'Charge Description', 'VAT Rate', 'Charge Amount', 'Source File'],
-    Review: ['File', 'Invoice/AWB', 'Reason', 'Expected', 'Extracted', 'Difference', 'Action'],
   };
   if (presets[fallback]) return presets[fallback];
   if (!rows.length) return [];
@@ -639,6 +644,17 @@ function fedexStats() {
   const unknown = STATE.fedexChecks.filter(row => row['Document Type'] === 'UNKNOWN').length;
   const duplicate = STATE.fedexChecks.filter(row => row['Document Type'] === 'DUPLICATE').length;
   return { total, duty, freight, unknown, duplicate, valid: total === duty + freight + unknown + duplicate };
+}
+
+function sortedFedExChecks() {
+  const order = { DUTY: 0, FREIGHT: 1, UNKNOWN: 2, DUPLICATE: 3 };
+  return [...STATE.fedexChecks].sort((a, b) => {
+    const aOrder = Object.prototype.hasOwnProperty.call(order, a['Document Type']) ? order[a['Document Type']] : 9;
+    const bOrder = Object.prototype.hasOwnProperty.call(order, b['Document Type']) ? order[b['Document Type']] : 9;
+    const typeDiff = aOrder - bOrder;
+    if (typeDiff) return typeDiff;
+    return String(a['Invoice Date'] || '').localeCompare(String(b['Invoice Date'] || '')) || String(a['Invoice Number'] || '').localeCompare(String(b['Invoice Number'] || ''));
+  });
 }
 
 function parseAmount(value) {
@@ -849,6 +865,8 @@ function resetApp() {
   STATE.summaries = [];
   STATE.charges = [];
   STATE.reviews = [];
+  STATE.activeTab = 'fedex';
+  setActiveTabButton('fedex');
   byId('fileBody').innerHTML = '';
   byId('resultHead').innerHTML = '';
   byId('resultBody').innerHTML = '';
