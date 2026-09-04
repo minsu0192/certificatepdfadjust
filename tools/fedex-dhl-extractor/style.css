@@ -267,17 +267,31 @@ th {
 
 .summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-top: 20px;
 }
 
-.summary > div {
+.summary > div,
+.summary > p {
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   text-align: center;
+}
+
+.summary > p {
+  grid-column: 1 / -1;
+  color: var(--green);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.summary > p.formula-error {
+  color: var(--danger);
+  background: var(--danger-bg);
+  border-color: #f2c4bf;
 }
 
 .summary small {
@@ -326,6 +340,7 @@ th {
 
 .row-check td { background: #fff9ed; }
 .row-error td { background: #fff3f2; }
+.row-duplicate td { background: #f2f4f5; }
 
 .sheet-list {
   display: grid;
