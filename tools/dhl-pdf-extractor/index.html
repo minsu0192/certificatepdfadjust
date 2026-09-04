@@ -20,7 +20,7 @@
     <header class="hero">
       <span class="badge">DHL PDF CHECK</span>
       <h1>DHL Invoice Check</h1>
-      <p>DHL 마감 인보이스와 eTradebill PDF를 별도 Excel 구조로 정리합니다.</p>
+      <p>DHL PDF에서 공급가액, 세액, 대납비용, 총정산금액, 승인번호, 발급번호, House B/L 번호를 정리합니다.</p>
       <span class="privacy">PDF는 브라우저 안에서만 처리되며 서버에 업로드되거나 저장되지 않습니다.</span>
     </header>
 
@@ -87,8 +87,8 @@
         <h2>지원 문서와 Excel 시트</h2>
       </div>
       <div class="sheet-list">
-        <div><strong>DHL Invoice</strong><span>Invoice Number, Invoice Date, Subtotal, VAT, Total KRW를 추출</span></div>
-        <div><strong>DHL eTradebill</strong><span>Approval Number, 작성일자, 공급가액, 세액, 합계금액을 추출</span></div>
+        <div><strong>DHL Invoice</strong><span>날짜, House B/L 번호, 공급가액, 세액, 총정산금액을 추출</span></div>
+        <div><strong>DHL eTradebill</strong><span>발급번호, 승인번호, 날짜, 공급가액, 세액, 대납비용, 총정산금액을 추출</span></div>
         <div><strong>DHL_Invoice_Check</strong><span>DHL PDF를 마감 인보이스, eTradebill, Unknown, Duplicate로 기록</span></div>
         <div><strong>File_Index</strong><span>파일명, 해시, 문서 유형, 페이지 수, 중복 여부, 처리 상태</span></div>
       </div>

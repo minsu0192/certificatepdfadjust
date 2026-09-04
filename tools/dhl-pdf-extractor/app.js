@@ -262,6 +262,7 @@ function parseDhlInvoice(text, fileName, method) {
     const invoiceLabel = invoiceNumber ? `INVOICE ${invoiceNumber}` : '';
     const invoiceDate = normalizeDate(firstMatch(block, [/INVOICE\s+DATE\s+([0-9]{1,2}-[A-Za-z]{3}-[0-9]{2,4})/i])) || extractDateNear(block, /Invoice\s*Date|Date/i) || firstDate(block);
     const shipmentNumber = firstMatch(block, [/SHIPMENT\s+(S\d+)/i, /Shipment\s*(?:Number|No\.?)\s*[:#]?\s*([A-Z0-9-]+)/i]);
+    const houseBlNumber = extractHouseBlNumber(block);
     const subtotal = amountNear(block, /\bSUBTOTAL\b/i);
     const vat = amountNear(block, /\bVAT\b/i);
     const total = amountNear(block, /\bTOTAL\s+KRW\b/i);
@@ -278,9 +279,10 @@ function parseDhlInvoice(text, fileName, method) {
       invoiceNumber: invoiceLabel,
       invoiceDate,
       shipmentNumber,
-      subtotal,
+      houseBlNumber,
+      supplyAmount: subtotal,
       vat,
-      total,
+      settlementTotal: total,
       reason,
       sourceFile: fileName,
       extractionMethod: method,
@@ -291,15 +293,19 @@ function parseDhlInvoice(text, fileName, method) {
 }
 
 function parseDhlEtradebill(text, fileName, method) {
+  const issueNumber = firstMatch(text, [/발급번호\s*[:：]?\s*([A-Za-z0-9.-]+)/i, /Issue\s*(?:Number|No\.?)\s*[:#]?\s*([A-Za-z0-9.-]+)/i]);
   const approval = firstMatch(text, [/승인번호\s*[:：]?\s*([A-Za-z0-9-]{12,})/i, /Approval\s*(?:Number|No\.?)\s*[:#]?\s*([A-Za-z0-9-]{12,})/i]);
   const issueDate = extractDateNear(text, /작성일자|Issue\s*Date|Date/i) || firstDate(text);
   const amounts = extractEtradebillAmounts(text);
   const supplyAmount = amounts.supplyAmount;
   let vat = amounts.vat;
   const total = amounts.total;
+  const extra = extractEtradebillExtraAmounts(text);
+  const houseBlNumber = extractHouseBlNumber(text);
   const taxType = /영세|Zero\s*Rated|0\s*%/i.test(text) ? 'Zero Rated' : 'Taxable';
   if (vat == null && taxType === 'Zero Rated') vat = 0;
   const reason = [
+    !issueNumber ? 'Missing issue number' : '',
     !approval ? 'Missing approval number' : '',
     !issueDate ? 'Missing issue date' : '',
     supplyAmount == null ? 'Missing supply amount' : '',
@@ -311,12 +317,15 @@ function parseDhlEtradebill(text, fileName, method) {
     rows: [dhlCheckRow({
       documentType: 'ETRADEBILL',
       extraction: 'Included',
+      issueNumber,
       approvalNumber: approval,
-      approvalLast8: approval ? approval.replace(/\D/g, '').slice(-8) : '',
       invoiceDate: issueDate,
+      houseBlNumber,
       supplyAmount,
       vat,
       total,
+      reimbursedExpense: extra.reimbursedExpense,
+      settlementTotal: extra.settlementTotal,
       taxType,
       reason,
       sourceFile: fileName,
@@ -332,19 +341,17 @@ function dhlCheckRow(data) {
     'Vendor Name': 'DHL',
     'Document Type': data.documentType || '',
     'Invoice Number': data.invoiceNumber || '',
-    'Approval Number': data.approvalNumber || '',
-    'Approval Last 8 Digits': data.approvalLast8 || '',
-    'Invoice Date': data.invoiceDate || '',
-    'Shipment Number': data.shipmentNumber || '',
-    Subtotal: valueOrBlank(data.subtotal),
-    VAT: valueOrBlank(data.vat),
-    'Supply Amount': valueOrBlank(data.supplyAmount),
-    Total: valueOrBlank(data.total),
-    'Tax Type': data.taxType || '',
-    Extraction: data.extraction || '',
+    날짜: data.invoiceDate || '',
+    발급번호: data.issueNumber || '',
+    승인번호: data.approvalNumber || '',
+    'House B/L 번호': data.houseBlNumber || '',
+    공급가액: valueOrBlank(data.supplyAmount),
+    세액: valueOrBlank(data.vat),
+    대납비용: valueOrBlank(data.reimbursedExpense),
+    총정산금액: valueOrBlank(data.settlementTotal),
+    합계금액: valueOrBlank(data.total),
     Reason: data.reason || '',
     'Source File': data.sourceFile || '',
-    'Extraction Method': data.extractionMethod || '',
     Status: data.status || 'OK',
   };
 }
@@ -406,8 +413,8 @@ function appendSheet(wb, name, rows, fallback) {
 
 function getColumns(rows, fallback) {
   const presets = {
-    dhl: ['Vendor Name', 'Document Type', 'Invoice Number', 'Approval Number', 'Approval Last 8 Digits', 'Invoice Date', 'Shipment Number', 'Subtotal', 'VAT', 'Supply Amount', 'Total', 'Tax Type', 'Extraction', 'Reason', 'Source File', 'Extraction Method', 'Status'],
-    DHL_Invoice_Check: ['Vendor Name', 'Document Type', 'Invoice Number', 'Approval Number', 'Approval Last 8 Digits', 'Invoice Date', 'Shipment Number', 'Subtotal', 'VAT', 'Supply Amount', 'Total', 'Tax Type', 'Extraction', 'Reason', 'Source File', 'Extraction Method', 'Status'],
+    dhl: ['Vendor Name', 'Document Type', 'Invoice Number', '날짜', '발급번호', '승인번호', 'House B/L 번호', '공급가액', '세액', '대납비용', '총정산금액', '합계금액', 'Reason', 'Source File', 'Status'],
+    DHL_Invoice_Check: ['Vendor Name', 'Document Type', 'Invoice Number', '날짜', '발급번호', '승인번호', 'House B/L 번호', '공급가액', '세액', '대납비용', '총정산금액', '합계금액', 'Reason', 'Source File', 'Status'],
     files: ['File', 'SHA-256', 'Document Type', 'Pages', 'Extraction Method', 'Duplicate Of', 'Status'],
     File_Index: ['File', 'SHA-256', 'Document Type', 'Pages', 'Extraction Method', 'Duplicate Of', 'Status'],
   };
@@ -487,6 +494,36 @@ function extractEtradebillAmounts(text) {
     vat: supplyPair ? supplyPair.second : null,
     total,
   };
+}
+
+function extractEtradebillExtraAmounts(text) {
+  const lines = String(text || '').split('\n').map(line => line.trim()).filter(Boolean);
+  const start = lines.findIndex(line => /부가금액|대납비용|총정산금액|B\/L\s*총금액/i.test(line));
+  const scope = start >= 0 ? lines.slice(start, start + 22) : lines;
+  const reimbursedLine = scope.find(line => /대납|Charges\s*Collect\s*Fee/i.test(line) && monetaryMatches(line).length);
+  const reimbursedValues = reimbursedLine ? monetaryMatches(reimbursedLine) : [];
+  const settlementLabelIndex = scope.findIndex(line => /총정산금액/i.test(line));
+  const settlementValues = settlementLabelIndex >= 0 ? monetaryMatches(scope.slice(settlementLabelIndex).join(' ')) : [];
+  return {
+    reimbursedExpense: reimbursedValues.length ? reimbursedValues[reimbursedValues.length - 1] : null,
+    settlementTotal: settlementValues.length ? settlementValues[settlementValues.length - 1] : null,
+  };
+}
+
+function extractHouseBlNumber(text) {
+  const direct = firstMatch(text, [
+    /House\s*B\/L\s*번호\s*[:：]?\s*([A-Z0-9][A-Z0-9.-]{4,})/i,
+    /\bHAWB\s*[:：]?\s*([A-Z0-9][A-Z0-9.-]{4,})/i,
+  ]);
+  if (direct && !/번호$/i.test(direct)) return direct;
+  const lines = String(text || '').split('\n').map(line => line.trim()).filter(Boolean);
+  const index = lines.findIndex(line => /House\s*B\/L\s*번호|HAWB/i.test(line));
+  if (index < 0) return '';
+  for (const line of lines.slice(index + 1, index + 12)) {
+    const matches = [...line.matchAll(/\b[A-Z]{1,8}[A-Z0-9.-]{4,}\b/gi)].map(match => match[0]).filter(value => /\d/.test(value) && !/첨부파일|최대|PDF|XLSX|JPG|TIF/i.test(value));
+    if (matches.length) return matches[matches.length - 1];
+  }
+  return '';
 }
 
 function extractDateNear(text, labelRe) {
