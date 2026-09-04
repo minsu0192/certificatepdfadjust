@@ -32,7 +32,7 @@
     <section class="tools-section" aria-labelledby="toolsTitle">
       <div class="section-heading">
         <div><span class="section-kicker">도구 선택</span><h2 id="toolsTitle">사용할 업무를 선택하세요</h2></div>
-        <span class="tool-count">4개 도구</span>
+        <span class="tool-count">5개 도구</span>
       </div>
       <nav class="category-tabs" aria-label="도구 분류">
         <button class="category-tab is-active" data-category="all">전체</button>
@@ -67,9 +67,17 @@
 
         <a class="tool-card" data-category="invoice" href="/tools/fedex-dhl-extractor/">
           <div class="tool-card__top"><span class="tool-icon tool-icon--blue">PDF</span><span class="status status--ready">사용 가능</span></div>
-          <h3>FedEx / DHL Extractor</h3>
-          <p>FedEx Duty·Freight, DHL 마감 인보이스, eTradebill PDF를 브라우저 안에서 읽어 Excel 출력 구조로 정리합니다.</p>
-          <div class="tool-card__meta"><span>FedEx·DHL PDF</span><span>→</span><span>Excel</span></div>
+          <h3>FedEx Invoice Check</h3>
+          <p>FedEx Duty는 AWB별 VAT를 추출하고 Freight는 레콘 제외 대상으로 분류합니다.</p>
+          <div class="tool-card__meta"><span>FedEx PDF</span><span>→</span><span>Excel</span></div>
+          <span class="tool-card__enter">열기 <b>→</b></span>
+        </a>
+
+        <a class="tool-card" data-category="invoice" href="/tools/dhl-pdf-extractor/">
+          <div class="tool-card__top"><span class="tool-icon tool-icon--yellow">DHL</span><span class="status status--ready">사용 가능</span></div>
+          <h3>DHL Invoice Check</h3>
+          <p>DHL 마감 인보이스와 eTradebill PDF를 별도 시트 구조로 정리합니다.</p>
+          <div class="tool-card__meta"><span>DHL PDF</span><span>→</span><span>Excel</span></div>
           <span class="tool-card__enter">열기 <b>→</b></span>
         </a>
       </div>

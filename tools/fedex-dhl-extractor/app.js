@@ -617,7 +617,7 @@ function exportExcel() {
   const wb = XLSX.utils.book_new();
   appendFedExCheckSheet(wb);
   appendSheet(wb, 'File_Index', STATE.fileIndex);
-  XLSX.writeFile(wb, `FedEx_DHL_Extraction_${timestamp()}.xlsx`);
+  XLSX.writeFile(wb, `FedEx_Invoice_Check_${timestamp()}.xlsx`);
 }
 
 function appendSheet(wb, name, rows) {

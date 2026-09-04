@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FedEx Invoice Check</title>
+  <title>DHL Invoice Check</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
@@ -18,9 +18,9 @@
 
   <main class="app">
     <header class="hero">
-      <span class="badge">VAT RECON CHECK</span>
-      <h1>FedEx Invoice Check</h1>
-      <p>FedEx PDF를 Duty, Freight, Unknown, Duplicate로 분류하고 Duty는 AWB별 VAT 레콘 금액으로 정리합니다.</p>
+      <span class="badge">DHL PDF CHECK</span>
+      <h1>DHL Invoice Check</h1>
+      <p>DHL 마감 인보이스와 eTradebill PDF를 별도 Excel 구조로 정리합니다.</p>
       <span class="privacy">PDF는 브라우저 안에서만 처리되며 서버에 업로드되거나 저장되지 않습니다.</span>
     </header>
 
@@ -32,9 +32,9 @@
     <section class="drop-zone" id="dropZone">
       <input type="file" id="folderInput" webkitdirectory multiple accept=".pdf" hidden>
       <input type="file" id="fileInput" multiple accept=".pdf" hidden>
-      <div class="file-icon">PDF</div>
-      <h2>FedEx PDF 또는 폴더를 여기에 드래그하세요</h2>
-      <p>Duty는 AWB별로, Freight는 레콘 제외 대상으로 정리합니다.</p>
+      <div class="file-icon">DHL</div>
+      <h2>DHL PDF 또는 폴더를 여기에 드래그하세요</h2>
+      <p>마감 인보이스와 eTradebill을 같은 Excel 안에서 구분합니다.</p>
       <div class="drop-actions">
         <button id="btnFolder" class="btn btn-primary" type="button">폴더 선택</button>
         <button id="btnFiles" class="btn btn-light" type="button">PDF 추가</button>
@@ -61,12 +61,11 @@
     </section>
 
     <section class="summary" id="summary" hidden>
-      <div><small>Total FedEx PDFs</small><strong id="statFiles">0</strong><span>개</span></div>
-      <div><small>Duty Invoice Count</small><strong id="statDone">0</strong><span>개</span></div>
-      <div><small>Freight Invoice Count</small><strong id="statCheck">0</strong><span>개</span></div>
-      <div><small>Unknown Count</small><strong id="statIssue">0</strong><span>개</span></div>
+      <div><small>Total DHL PDFs</small><strong id="statFiles">0</strong><span>개</span></div>
+      <div><small>Invoice Count</small><strong id="statInvoice">0</strong><span>개</span></div>
+      <div><small>eTradebill Count</small><strong id="statEtradebill">0</strong><span>개</span></div>
+      <div><small>Unknown Count</small><strong id="statUnknown">0</strong><span>개</span></div>
       <div><small>Duplicate Count</small><strong id="statDuplicate">0</strong><span>개</span></div>
-      <p id="statFormula" class="formula-ok">0 = 0 + 0 + 0 + 0</p>
     </section>
 
     <div class="actions" id="actions" hidden>
@@ -76,7 +75,7 @@
 
     <section class="results" id="results" hidden>
       <div class="result-tabs">
-        <button class="tab is-active" data-tab="fedex" type="button">FedEx Invoice Check</button>
+        <button class="tab is-active" data-tab="dhl" type="button">DHL Invoice Check</button>
         <button class="tab" data-tab="files" type="button">File Index</button>
       </div>
       <div class="table-wrap"><table><thead id="resultHead"></thead><tbody id="resultBody"></tbody></table></div>
@@ -88,10 +87,9 @@
         <h2>지원 문서와 Excel 시트</h2>
       </div>
       <div class="sheet-list">
-        <div><strong>FedEx Duty</strong><span>같은 Invoice Number 안에서도 AWB별로 Duty VAT, Handling VAT, Total VAT를 추출</span></div>
-        <div><strong>FedEx Freight</strong><span>VAT Extraction을 Excluded로 기록하고 오류 없이 제외 사유 표시</span></div>
-        <div><strong>FedEx Unknown</strong><span>Duty/Freight 분류 실패 시 1파일 1행으로 CHECK 기록</span></div>
-        <div><strong>FedEx_Invoice_Check</strong><span>Invoice Summary 정보를 합쳐 모든 FedEx PDF를 Duty, Freight, Unknown, Duplicate 중 하나로 기록</span></div>
+        <div><strong>DHL Invoice</strong><span>Invoice Number, Invoice Date, Subtotal, VAT, Total KRW를 추출</span></div>
+        <div><strong>DHL eTradebill</strong><span>Approval Number, 작성일자, 공급가액, 세액, 합계금액을 추출</span></div>
+        <div><strong>DHL_Invoice_Check</strong><span>DHL PDF를 마감 인보이스, eTradebill, Unknown, Duplicate로 기록</span></div>
         <div><strong>File_Index</strong><span>파일명, 해시, 문서 유형, 페이지 수, 중복 여부, 처리 상태</span></div>
       </div>
     </section>
