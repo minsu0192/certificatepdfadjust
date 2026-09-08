@@ -126,20 +126,20 @@
             <label class="field">
               <span>압축 해상도</span>
               <select id="compressScale">
-                <option value="0.85">작게</option>
-                <option value="1" selected>보통</option>
-                <option value="1.2">선명</option>
+                <option value="1">작게</option>
+                <option value="1.45" selected>보통</option>
+                <option value="1.8">선명</option>
               </select>
             </label>
             <label class="field">
               <span>강한 압축 품질</span>
-              <input id="compressQuality" type="range" min="35" max="75" value="52">
-              <b id="compressQualityValue">52%</b>
+              <input id="compressQuality" type="range" min="50" max="90" value="76">
+              <b id="compressQualityValue">76%</b>
             </label>
             <button class="btn btn--primary" id="compressRun" type="button">PDF 압축</button>
           </div>
         </div>
-        <p class="note">강한 압축은 페이지를 이미지로 다시 저장하므로 텍스트 선택과 검색이 제한될 수 있습니다. 스캔본이나 이미지가 많은 PDF에 가장 효과적입니다.</p>
+        <p class="note">강한 압축은 페이지를 이미지로 다시 저장하므로 텍스트 선택과 검색이 제한될 수 있습니다. 화질이 중요하면 해상도는 선명, 품질은 80% 이상을 사용하세요.</p>
         <ul class="file-list" id="compressList"></ul>
       </section>
     </section>

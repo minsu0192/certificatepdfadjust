@@ -249,22 +249,6 @@ async function optimizePdf(file) {
 }
 
 async function rasterCompressPdf(file, quality, scale, onPage) {
-  const attempts = [
-    { quality, scale },
-    { quality: Math.min(quality, 0.46), scale: Math.min(scale, 0.85) },
-    { quality: 0.38, scale: 0.72 }
-  ];
-
-  let bestBytes = null;
-  for (let i = 0; i < attempts.length; i += 1) {
-    const bytes = await rasterCompressPdfOnce(file, attempts[i].quality, attempts[i].scale, onPage);
-    if (!bestBytes || bytes.length < bestBytes.length) bestBytes = bytes;
-    if (bytes.length < file.size * 0.96) return bytes;
-  }
-  return bestBytes.length < file.size ? bestBytes : new Uint8Array(await file.arrayBuffer());
-}
-
-async function rasterCompressPdfOnce(file, quality, scale, onPage) {
   const source = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
   const pdf = await PDFLib.PDFDocument.create();
   for (let pageNo = 1; pageNo <= source.numPages; pageNo += 1) {
@@ -277,7 +261,8 @@ async function rasterCompressPdfOnce(file, quality, scale, onPage) {
     page.drawImage(image, { x: 0, y: 0, width: pageSize.width, height: pageSize.height });
     onPage({ progress: pageNo / source.numPages, label: `${file.name} ${pageNo}/${source.numPages} 페이지 압축 중` });
   }
-  return pdf.save({ useObjectStreams: true });
+  const bytes = await pdf.save({ useObjectStreams: true });
+  return bytes.length < file.size ? bytes : new Uint8Array(await file.arrayBuffer());
 }
 
 async function renderPageAsJpg(pdf, pageNo, scale, quality) {
