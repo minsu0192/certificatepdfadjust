@@ -204,16 +204,22 @@ async function runCompress() {
 
   await withBusy('PDF를 압축하는 중...', async update => {
     const mode = document.getElementById('compressMode').value;
+    const quality = Number(document.getElementById('compressQuality').value) / 100;
+    const scale = Number(document.getElementById('compressScale').value);
     const zip = files.length > 1 ? new JSZip() : null;
     let saved = 0;
+    let totalInput = 0;
+    let totalOutput = 0;
 
     for (let i = 0; i < files.length; i += 1) {
       const file = files[i];
+      totalInput += file.size;
       const bytes = mode === 'raster'
-        ? await rasterCompressPdf(file, Number(document.getElementById('compressQuality').value) / 100, message => {
+        ? await rasterCompressPdf(file, quality, scale, message => {
             update(((i + message.progress) / files.length) * 100, message.label);
           })
         : await optimizePdf(file);
+      totalOutput += bytes.length;
       const name = `${baseName(file.name)}_compressed.pdf`;
       if (zip) zip.file(name, bytes);
       else downloadBlob(new Blob([bytes], { type: 'application/pdf' }), name);
@@ -226,7 +232,11 @@ async function runCompress() {
       downloadBlob(blob, `compressed_pdfs_${Date.now()}.zip`);
     }
 
-    showResult('PDF 압축 완료', `${saved}개 파일을 압축했습니다.`);
+    const ratio = totalInput ? Math.max(0, 100 - (totalOutput / totalInput * 100)) : 0;
+    const detail = ratio > 0
+      ? `${saved}개 파일을 압축했습니다. PDF 합계 기준 약 ${ratio.toFixed(1)}% 감소했습니다.`
+      : `${saved}개 파일을 처리했습니다. 이미 압축된 PDF라 용량 감소가 거의 없을 수 있습니다.`;
+    showResult('PDF 압축 완료', detail);
   });
 }
 
@@ -234,18 +244,37 @@ async function optimizePdf(file) {
   const pdf = await PDFLib.PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true });
   pdf.setProducer('LVMH Fashion Group PDF Workbench');
   pdf.setCreator('LVMH Fashion Group PDF Workbench');
-  return pdf.save({ useObjectStreams: true, addDefaultPage: false, objectsPerTick: 50 });
+  const bytes = await pdf.save({ useObjectStreams: true, addDefaultPage: false, objectsPerTick: 50 });
+  return bytes.length < file.size ? bytes : new Uint8Array(await file.arrayBuffer());
 }
 
-async function rasterCompressPdf(file, quality, onPage) {
+async function rasterCompressPdf(file, quality, scale, onPage) {
+  const attempts = [
+    { quality, scale },
+    { quality: Math.min(quality, 0.46), scale: Math.min(scale, 0.85) },
+    { quality: 0.38, scale: 0.72 }
+  ];
+
+  let bestBytes = null;
+  for (let i = 0; i < attempts.length; i += 1) {
+    const bytes = await rasterCompressPdfOnce(file, attempts[i].quality, attempts[i].scale, onPage);
+    if (!bestBytes || bytes.length < bestBytes.length) bestBytes = bytes;
+    if (bytes.length < file.size * 0.96) return bytes;
+  }
+  return bestBytes.length < file.size ? bestBytes : new Uint8Array(await file.arrayBuffer());
+}
+
+async function rasterCompressPdfOnce(file, quality, scale, onPage) {
   const source = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
   const pdf = await PDFLib.PDFDocument.create();
   for (let pageNo = 1; pageNo <= source.numPages; pageNo += 1) {
-    const blob = await renderPageAsJpg(source, pageNo, 1.35, quality);
+    const sourcePage = await source.getPage(pageNo);
+    const pageSize = sourcePage.getViewport({ scale: 1 });
+    const blob = await renderPageAsJpg(source, pageNo, scale, quality);
     const jpgBytes = await blob.arrayBuffer();
     const image = await pdf.embedJpg(jpgBytes);
-    const page = pdf.addPage([image.width, image.height]);
-    page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+    const page = pdf.addPage([pageSize.width, pageSize.height]);
+    page.drawImage(image, { x: 0, y: 0, width: pageSize.width, height: pageSize.height });
     onPage({ progress: pageNo / source.numPages, label: `${file.name} ${pageNo}/${source.numPages} 페이지 압축 중` });
   }
   return pdf.save({ useObjectStreams: true });
