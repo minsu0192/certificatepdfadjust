@@ -110,21 +110,21 @@
       <section class="tab-panel" data-panel="unlock">
         <div class="panel-grid">
           <div class="drop-zone" data-drop="unlock">
-            <input id="unlockInput" type="file" accept="application/pdf,.pdf" hidden>
+            <input id="unlockInput" type="file" accept="application/pdf,.pdf" multiple hidden>
             <div class="drop-zone__icon">PDF</div>
-            <p class="drop-zone__primary">잠금을 해제할 PDF 한 개를 선택하세요</p>
+            <p class="drop-zone__primary">잠금을 해제할 PDF를 여러 개 선택하세요</p>
             <p class="drop-zone__secondary">텍스트와 화질을 유지하며 비밀번호 및 인쇄·복사 제한을 해제합니다.</p>
             <button class="btn btn--secondary" type="button" data-pick="unlockInput">파일 선택</button>
           </div>
           <div class="settings-card">
             <label class="field">
-              <span>PDF 비밀번호</span>
+              <span>공통 PDF 비밀번호</span>
               <input id="unlockPassword" type="password" autocomplete="off" placeholder="열기 비밀번호가 없으면 비워 두세요">
             </label>
             <button class="btn btn--primary" id="unlockRun" type="button">잠금 해제 후 다운로드</button>
           </div>
         </div>
-        <p class="note">열기 비밀번호가 있는 PDF는 올바른 비밀번호가 필요합니다. 파일과 비밀번호는 서버로 전송되지 않으며, 결과는 원본명_unlocked.pdf로 저장됩니다.</p>
+        <p class="note">열기 비밀번호가 있는 PDF는 올바른 비밀번호가 필요합니다. 입력한 비밀번호를 모든 파일에 적용합니다. 한 파일은 PDF로, 여러 파일은 ZIP으로 저장하며 실패한 파일은 별도로 안내합니다. 파일과 비밀번호는 서버로 전송되지 않습니다.</p>
         <ul class="file-list" id="unlockList"></ul>
       </section>
 

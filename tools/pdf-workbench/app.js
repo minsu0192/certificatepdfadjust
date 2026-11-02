@@ -45,7 +45,7 @@ setupDrop('merge', 'mergeInput', true);
 setupDrop('split', 'splitInput', false);
 setupDrop('jpg', 'jpgInput', true);
 setupDrop('compress', 'compressInput', true);
-setupDrop('unlock', 'unlockInput', false);
+setupDrop('unlock', 'unlockInput', true);
 
 document.getElementById('jpgQuality').addEventListener('input', event => {
   document.getElementById('jpgQualityValue').textContent = `${event.target.value}%`;
@@ -387,32 +387,68 @@ function escapeHtml(value) {
 }
 
 async function runUnlock() {
-  const file = state.unlock[0];
-  if (!file) throwUserError('잠금을 해제할 PDF 파일을 선택하세요.');
+  const files = [...state.unlock];
+  if (!files.length) throwUserError('잠금을 해제할 PDF 파일을 선택하세요.');
+  if (files.length > 1 && !window.JSZip) {
+    throwUserError('ZIP 라이브러리가 로드되지 않았습니다. 새로고침 후 다시 시도하세요.');
+  }
   const passwordInput = document.getElementById('unlockPassword');
   const password = passwordInput.value;
   passwordInput.value = '';
   await withBusy('PDF 잠금을 해제하는 중...', async update => {
-    const data = await file.arrayBuffer();
-    const bytes = await new Promise((resolve, reject) => {
-      const worker = new Worker('unlock-worker.js');
-      const finish = (error, result) => {
-        clearTimeout(timer);
-        worker.terminate();
-        if (error) reject(new Error(error));
-        else resolve(result);
-      };
-      const timer = setTimeout(() => finish('처리 시간이 초과되었습니다. 더 작은 PDF로 다시 시도하세요.'), 180000);
-      worker.onmessage = ({ data: result }) => finish(result.error, result.bytes);
-      worker.onerror = event => {
-        event.preventDefault();
-        finish('잠금 해제 도구를 실행하지 못했습니다. 새로고침 후 다시 시도하세요.');
-      };
-      worker.postMessage({ data, password }, [data]);
-    });
-    const name = `${baseName(file.name)}_unlocked.pdf`;
-    downloadBlob(new Blob([bytes], { type: 'application/pdf' }), name);
-    update(100, 'PDF 잠금 해제 완료');
-    showResult('PDF 잠금 해제 완료', `${name}로 저장했습니다.`);
+    const zip = files.length > 1 ? new JSZip() : null;
+    const usedNames = new Set();
+    const failures = [];
+    let saved = 0;
+    for (let i = 0; i < files.length; i += 1) {
+      const file = files[i];
+      update((i / files.length) * 100, `${i + 1}/${files.length} · ${file.name} 잠금 해제 중`);
+      try {
+        const bytes = await unlockPdf(file, password);
+        const base = `${baseName(file.name)}_unlocked`;
+        let name = `${base}.pdf`;
+        let suffix = 2;
+        while (usedNames.has(name.toLowerCase())) name = `${base}_${suffix++}.pdf`;
+        usedNames.add(name.toLowerCase());
+        if (zip) zip.file(name, bytes);
+        else downloadBlob(new Blob([bytes], { type: 'application/pdf' }), name);
+        saved += 1;
+      } catch (error) {
+        failures.push(`${file.name}: ${error.message || String(error)}`);
+      }
+      update(((i + 1) / files.length) * 100, `${i + 1}/${files.length} 파일 처리 완료`);
+    }
+    if (zip && saved) {
+      if (failures.length) zip.file('잠금해제_실패목록.txt', failures.join('\n'));
+      update(100, 'ZIP 파일을 만드는 중...');
+      downloadBlob(await zip.generateAsync({ type: 'blob' }), `unlocked_pdfs_${Date.now()}.zip`);
+    }
+    update(100, `처리 완료 · 성공 ${saved}개 / 실패 ${failures.length}개`);
+    showResult(
+      saved ? 'PDF 잠금 해제 완료' : 'PDF 잠금 해제 실패',
+      `${files.length}개 중 ${saved}개 저장 완료${zip && saved ? ' (ZIP)' : ''}.` +
+        (failures.length ? `\n실패 ${failures.length}개:\n${failures.join('\n')}` : ''),
+      !saved
+    );
+  });
+}
+
+async function unlockPdf(file, password) {
+  const data = await file.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    const worker = new Worker('unlock-worker.js');
+    const finish = (error, result) => {
+      clearTimeout(timer);
+      worker.terminate();
+      if (error) reject(new Error(error));
+      else resolve(result);
+    };
+    const timer = setTimeout(() => finish('처리 시간이 초과되었습니다. 더 작은 PDF로 다시 시도하세요.'), 180000);
+    worker.onmessage = ({ data: result }) => finish(result.error, result.bytes);
+    worker.onerror = event => {
+      event.preventDefault();
+      finish('잠금 해제 도구를 실행하지 못했습니다. 새로고침 후 다시 시도하세요.');
+    };
+    worker.postMessage({ data, password }, [data]);
   });
 }
