@@ -12,7 +12,8 @@ const state = {
   merge: [],
   split: [],
   jpg: [],
-  compress: []
+  compress: [],
+  unlock: []
 };
 
 if (!window.PDFLib || !window.pdfjsLib || !window.JSZip) {
@@ -44,6 +45,7 @@ setupDrop('merge', 'mergeInput', true);
 setupDrop('split', 'splitInput', false);
 setupDrop('jpg', 'jpgInput', true);
 setupDrop('compress', 'compressInput', true);
+setupDrop('unlock', 'unlockInput', false);
 
 document.getElementById('jpgQuality').addEventListener('input', event => {
   document.getElementById('jpgQualityValue').textContent = `${event.target.value}%`;
@@ -57,6 +59,8 @@ document.getElementById('mergeRun').addEventListener('click', () => handle(runMe
 document.getElementById('splitRun').addEventListener('click', () => handle(runSplit));
 document.getElementById('jpgRun').addEventListener('click', () => handle(runJpg));
 document.getElementById('compressRun').addEventListener('click', () => handle(runCompress));
+
+document.getElementById('unlockRun').addEventListener('click', () => handle(runUnlock));
 
 function setupDrop(type, inputId, multiple) {
   const zone = document.querySelector(`[data-drop="${type}"]`);
@@ -86,6 +90,8 @@ function setupDrop(type, inputId, multiple) {
 }
 
 function setFiles(type, files, multiple) {
+  if (document.getElementById('unlockRun').disabled) return;
+  if (type === 'unlock') document.getElementById('unlockPassword').value = '';
   const pdfs = files.filter(file => isPdf(file));
   state[type] = multiple ? pdfs : pdfs.slice(0, 1);
   renderFileList(type);
@@ -378,4 +384,35 @@ function escapeHtml(value) {
     '"': '&quot;',
     "'": '&#39;'
   }[char]));
+}
+
+async function runUnlock() {
+  const file = state.unlock[0];
+  if (!file) throwUserError('잠금을 해제할 PDF 파일을 선택하세요.');
+  const passwordInput = document.getElementById('unlockPassword');
+  const password = passwordInput.value;
+  passwordInput.value = '';
+  await withBusy('PDF 잠금을 해제하는 중...', async update => {
+    const data = await file.arrayBuffer();
+    const bytes = await new Promise((resolve, reject) => {
+      const worker = new Worker('unlock-worker.js');
+      const finish = (error, result) => {
+        clearTimeout(timer);
+        worker.terminate();
+        if (error) reject(new Error(error));
+        else resolve(result);
+      };
+      const timer = setTimeout(() => finish('처리 시간이 초과되었습니다. 더 작은 PDF로 다시 시도하세요.'), 180000);
+      worker.onmessage = ({ data: result }) => finish(result.error, result.bytes);
+      worker.onerror = event => {
+        event.preventDefault();
+        finish('잠금 해제 도구를 실행하지 못했습니다. 새로고침 후 다시 시도하세요.');
+      };
+      worker.postMessage({ data, password }, [data]);
+    });
+    const name = `${baseName(file.name)}_unlocked.pdf`;
+    downloadBlob(new Blob([bytes], { type: 'application/pdf' }), name);
+    update(100, 'PDF 잠금 해제 완료');
+    showResult('PDF 잠금 해제 완료', `${name}로 저장했습니다.`);
+  });
 }
