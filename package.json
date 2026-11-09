@@ -1,0 +1,12 @@
+{
+  "name": "certificatepdfadjust",
+  "private": true,
+  "description": "Browser-based document and invoice tools (static site). Dev dependencies are only used for tests.",
+  "scripts": {
+    "test": "node tests/run.cjs"
+  },
+  "devDependencies": {
+    "pdf-lib": "1.17.1",
+    "playwright": "1.64.1"
+  }
+}
