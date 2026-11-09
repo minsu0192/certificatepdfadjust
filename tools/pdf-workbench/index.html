@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PDF · 이미지 워크스페이스 | LVMH Fashion Group 업무 자동화 도구</title>
+  <title>PDF · 이미지 워크스페이스 | LVMH Fashion Group 업무 자동화 도구</title><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#253654"><link rel="icon" href="/icons/icon-192.png"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><script src="/pwa.js" defer></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
@@ -31,7 +31,7 @@
     </div>
 
     <section class="workbench">
-      <nav class="tab-list" aria-label="작업 선택"><button class="tab-button is-active" type="button" data-tab="editor" aria-pressed="true"><span class="tab-number">01</span><span><b>편집 · 페이지 관리</b><small>수정, 순서 변경, 추출·분리</small></span></button><button class="tab-button " type="button" data-tab="merge" aria-pressed="false"><span class="tab-number">02</span><span><b>PDF 합치기</b><small>여러 문서를 하나로</small></span></button><button class="tab-button " type="button" data-tab="jpg" aria-pressed="false"><span class="tab-number">03</span><span><b>PDF → 이미지</b><small>페이지를 JPG · PNG로</small></span></button><button class="tab-button " type="button" data-tab="image" aria-pressed="false"><span class="tab-number">04</span><span><b>이미지 형식 변환</b><small>JPG · PNG · WebP 변환</small></span></button><button class="tab-button " type="button" data-tab="compress" aria-pressed="false"><span class="tab-number">05</span><span><b>PDF 압축</b><small>파일 용량 줄이기</small></span></button><button class="tab-button " type="button" data-tab="unlock" aria-pressed="false"><span class="tab-number">06</span><span><b>잠금 해제</b><small>비밀번호 · 사용 제한 해제</small></span></button></nav>
+      <nav class="tab-list" aria-label="작업 선택"><button class="tab-button is-active" type="button" data-tab="editor" aria-pressed="true"><span class="tab-number">01</span><span><b>편집 · 페이지 관리</b><small>수정, 순서 변경, 추출·분리</small></span></button><button class="tab-button " type="button" data-tab="merge" aria-pressed="false"><span class="tab-number">02</span><span><b>PDF 합치기</b><small>여러 문서를 하나로</small></span></button><button class="tab-button " type="button" data-tab="jpg" aria-pressed="false"><span class="tab-number">03</span><span><b>PDF → 이미지</b><small>페이지를 JPG · PNG로</small></span></button><button class="tab-button " type="button" data-tab="image" aria-pressed="false"><span class="tab-number">04</span><span><b>이미지 형식 변환</b><small>JPG · PNG · WebP 변환</small></span></button><button class="tab-button " type="button" data-tab="compress" aria-pressed="false"><span class="tab-number">05</span><span><b>PDF 압축</b><small>파일 용량 줄이기</small></span></button><button class="tab-button " type="button" data-tab="unlock" aria-pressed="false"><span class="tab-number">06</span><span><b>잠금 해제</b><small>비밀번호 · 사용 제한 해제</small></span></button><button class="tab-button " type="button" data-tab="ocr" aria-pressed="false"><span class="tab-number">07</span><span><b>글자 인식 (OCR)</b><small>스캔본을 검색 가능하게</small></span></button></nav>
 
       <section class="tab-panel is-active" data-panel="editor">
         <div class="editor-heading"><div><h2>편집 · 페이지 관리</h2><p>순서를 바꾸고 필요한 페이지만 추출하세요. 텍스트와 서명도 추가할 수 있습니다.</p></div><button class="btn btn--secondary" type="button" data-pick="editorInput">PDF 열기</button></div>
@@ -47,7 +47,7 @@
           <div class="editor-topbar">
             <div class="segmented" role="group" aria-label="편집 모드"><button type="button" id="editModePages" aria-pressed="true">페이지 정리</button><button type="button" id="editModeContent" aria-pressed="false">내용 편집</button></div>
             <div class="history-actions"><button type="button" class="btn btn--secondary" id="editUndo" title="실행 취소 (Ctrl+Z)">↶ 실행 취소</button><button type="button" class="btn btn--secondary" id="editRedo" title="다시 실행 (Ctrl+Shift+Z)">↷ 다시 실행</button></div>
-            <div class="save-actions"><input id="editName" value="edited.pdf" aria-label="저장 파일명" spellcheck="false"><button type="button" class="btn btn--primary" id="editSave">PDF 저장</button></div>
+            <div class="save-actions"><input id="editName" value="edited.pdf" aria-label="저장 파일명" spellcheck="false"><button type="button" class="btn btn--primary" id="editSave">PDF 저장</button><select id="editSendTo" class="send-to" aria-label="편집본을 다른 작업으로 보내기" title="다운로드 없이 다른 작업으로 보내기"><option value="">보내기…</option><option value="compress">압축하기</option><option value="jpg">이미지로 변환</option><option value="merge">합치기에 추가</option><option value="ocr">글자 인식(OCR)</option></select></div>
           </div>
           <p id="editModeHint" class="editor-hint mode-hint"></p>
           <p id="editMessage" class="edit-message" role="alert" hidden></p>
@@ -200,6 +200,25 @@
         <ul class="file-list" id="imageList"></ul>
       </section>
 
+      <section class="tab-panel" data-panel="ocr">
+        <div class="panel-heading"><h2>글자 인식 (OCR)</h2><p>스캔하거나 사진으로 만든 PDF에서 글자를 인식해, 검색·복사가 되는 PDF로 저장합니다.</p></div>
+        <div class="panel-grid">
+          <div class="drop-zone" data-drop="ocr">
+            <input id="ocrInput" type="file" accept="application/pdf,.pdf" multiple hidden>
+            <div class="drop-zone__icon">OCR</div>
+            <p class="drop-zone__primary">스캔한 PDF를 추가하세요</p>
+            <p class="drop-zone__secondary">겉모습은 그대로 두고, 보이지 않는 글자 층을 덧붙입니다.</p>
+            <button class="btn btn--secondary" type="button" data-pick="ocrInput">파일 선택</button>
+          </div>
+          <div class="settings-card">
+            <label class="field"><span>인식할 언어</span><select id="ocrLang"><option value="kor+eng">한국어 + 영어</option><option value="eng">영어만 (더 빠름)</option></select></label>
+            <label class="check-field"><input id="ocrForce" type="checkbox"> 이미 글자가 있는 페이지도 다시 인식</label>
+            <button class="btn btn--primary" id="ocrRun" type="button">글자 인식 후 저장</button>
+          </div>
+        </div>
+        <p class="note">처음 실행할 때 인식 엔진과 언어 데이터(약 10MB)를 내려받습니다. 페이지당 몇 초가 걸리며, 인식 결과는 원본 화질과 글씨 상태에 따라 틀릴 수 있습니다. 파일은 서버로 전송되지 않습니다.</p>
+        <ul class="file-list" id="ocrList"></ul>
+      </section>
       <section class="tab-panel" data-panel="unlock">
         <div class="panel-heading"><h2>PDF 잠금 해제</h2><p>비밀번호가 있는 문서는 비밀번호를 입력해 잠금을 해제하세요.</p></div>
         <div class="panel-grid">
@@ -269,6 +288,7 @@
     <section class="result-card" id="resultCard" hidden>
       <strong id="resultTitle">완료</strong>
       <p id="resultDetail"></p>
+      <div id="resultNext" class="result-next" hidden></div>
     </section>
   </main>
 
@@ -281,5 +301,7 @@
   <script src="app.js"></script>
   <script src="editor.js"></script>
   <script src="image-converter.js"></script>
+  <script src="/tool-ocr.js"></script>
+  <script src="ocr-tab.js"></script>
 </body>
 </html>

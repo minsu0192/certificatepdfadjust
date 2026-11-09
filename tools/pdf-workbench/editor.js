@@ -386,7 +386,7 @@
     hoverRun = null; selectionSettings(); redraw();
     if (next === 'retext') action(async () => {
       await loadRuns(); redraw();
-      if (!textRuns.length) notify('이 페이지에서 고칠 수 있는 글자를 찾지 못했습니다. 스캔한 문서라면 가리기 + 텍스트를 이용하세요.', true);
+      if (!textRuns.length) notify('이 페이지에서 고칠 수 있는 글자를 찾지 못했습니다. 가리기 + 텍스트를 이용하세요.', true);
     })();
   }
   for (const b of document.querySelectorAll('[data-tool]')) b.onclick = () => { if (!locked()) setTool(b.dataset.tool); };
@@ -587,7 +587,8 @@
   async function loadRuns() {
     const p = current(); const key = pageKey(p);
     if (key === runsKey) return textRuns;
-    const page = await pdfPage(p); const content = await page.getTextContent();
+    const page = await pdfPage(p); let content = await page.getTextContent();
+    if (window.ToolOcr && ToolOcr.needsOcr(content)) content = await ToolOcr.pageContent(page); // scanned page: find text with OCR
     textRuns = content.items.filter(it => it.str && it.str.trim() && it.transform && it.width > 0).map(it => {
       const tx = pdfjsLib.Util.transform(viewport.transform, it.transform);
       const angle = Math.atan2(tx[1], tx[0]), size = Math.hypot(tx[2], tx[3]), style = content.styles[it.fontName] || {};
@@ -899,10 +900,7 @@
     const [ax, ay] = toPdf(p.crop.x, p.crop.y), [bx, by] = toPdf(p.crop.x + p.crop.w, p.crop.y + p.crop.h);
     page.setCropBox(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
   }
-  async function save(onlySelected, separate = false) {
-    if (onlySelected) requireSelection();
-    busy = true; $('editorStatus').textContent = 'PDF를 저장하는 중…';
-    try {
+  async function buildOutput(onlySelected) {
       const output = await PDFLib.PDFDocument.create(); const chosen = pages.filter(p => !onlySelected || selected.has(p.id));
       let font = null; const images = new Map();
       if (chosen.some(p => p.items.some(it => it.kind === 'text'))) {
@@ -938,6 +936,13 @@
           applyCrop(page, p, (x, y) => vp.convertToPdfPoint(x, y));
         }
       }
+      return { output, chosen, redacted };
+  }
+  async function save(onlySelected, separate = false) {
+    if (onlySelected) requireSelection();
+    busy = true; $('editorStatus').textContent = 'PDF를 저장하는 중…';
+    try {
+      const { output, chosen, redacted } = await buildOutput(onlySelected);
       const name = baseName($('editName').value) || 'edited';
       if (separate) {
         const zip = new JSZip();
@@ -956,6 +961,17 @@
   }
   $('editZip').onclick = action(() => save(true, true));
   $('editSave').onclick = action(() => save(false)); $('editExtract').onclick = action(() => save(true));
+  // Hand the edited PDF to another tool without downloading it first.
+  $('editSendTo').onchange = action(async () => {
+    const target = $('editSendTo').value; $('editSendTo').value = ''; if (!target) return;
+    busy = true;
+    try {
+      const { output } = await buildOutput(false);
+      const file = window.workbench.pdfFile(await output.save(), normalizePdfName($('editName').value || 'edited.pdf'));
+      busy = false; window.workbench.sendTo(target, [file]);
+    } finally { busy = false; }
+  });
+  window.workbenchEditor = { open: file => openFiles([file]) };
   $('editName').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('editSave').click(); } };
   setMode('pages'); selectionSettings(); offerRestore();
 })();

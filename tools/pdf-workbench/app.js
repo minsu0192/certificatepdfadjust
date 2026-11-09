@@ -13,7 +13,8 @@ const state = {
   image: [],
   jpg: [],
   compress: [],
-  unlock: []
+  unlock: [],
+  ocr: []
 };
 
 if (!window.PDFLib || !window.pdfjsLib || !window.JSZip) {
@@ -202,6 +203,7 @@ async function runMerge() {
     const fileName = normalizePdfName(document.getElementById('mergeName').value || 'merged.pdf');
     downloadBlob(new Blob([bytes], { type: 'application/pdf' }), fileName);
     showResult('PDF 합치기 완료', `${files.length}개 PDF를 ${fileName}로 저장했습니다.`);
+    offerNext([pdfFile(bytes, fileName)], 'merge');
   });
 }
 
@@ -248,6 +250,7 @@ async function runCompress() {
     let saved = 0;
     let totalInput = 0;
     let totalOutput = 0;
+    const outputs = [];
 
     for (let i = 0; i < files.length; i += 1) {
       const file = files[i];
@@ -259,6 +262,7 @@ async function runCompress() {
         : await optimizePdf(file);
       totalOutput += bytes.length;
       const name = `${baseName(file.name)}_compressed.pdf`;
+      outputs.push(pdfFile(bytes, name));
       if (zip) zip.file(name, bytes);
       else downloadBlob(new Blob([bytes], { type: 'application/pdf' }), name);
       saved += 1;
@@ -275,6 +279,7 @@ async function runCompress() {
       ? `${saved}개 파일을 압축했습니다. PDF 합계 기준 약 ${ratio.toFixed(1)}% 감소했습니다.`
       : `${saved}개 파일을 처리했습니다. 이미 압축된 PDF라 용량 감소가 거의 없을 수 있습니다.`;
     showResult('PDF 압축 완료', detail);
+    offerNext(outputs, 'compress');
   });
 }
 
@@ -369,7 +374,33 @@ function showResult(title, detail, isError = false) {
 
 function hideResult() {
   els.resultCard.hidden = true;
+  const next = document.getElementById('resultNext'); next.hidden = true; next.replaceChildren();
 }
+
+/* ── Continue with another tool without downloading and re-uploading ── */
+const NEXT_TARGETS = [
+  ['editor', '편집기에서 열기'], ['merge', '합치기에 추가'], ['compress', '압축하기'],
+  ['jpg', '이미지로 변환'], ['ocr', '글자 인식(OCR)']
+];
+const pdfFile = (bytes, name) => new File([bytes], name, { type: 'application/pdf' });
+function offerNext(files, from) {
+  const box = document.getElementById('resultNext');
+  const targets = NEXT_TARGETS.filter(([tab]) => tab !== from && (tab !== 'editor' || files.length === 1));
+  if (!files.length) return;
+  const label = document.createElement('span'); label.textContent = '이어서 작업:';
+  box.replaceChildren(label, ...targets.map(([tab, text]) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn--secondary'; button.dataset.next = tab;
+    button.textContent = `${text} →`; button.onclick = () => sendTo(tab, files); return button;
+  }));
+  box.hidden = false;
+}
+function sendTo(tab, files) {
+  document.querySelector(`.tab-button[data-tab="${tab}"]`).click();
+  if (tab === 'editor') window.workbenchEditor?.open(files[0]);
+  else setFiles(tab, files, true);
+  document.querySelector(`[data-panel="${tab}"]`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+window.workbench = { sendTo, offerNext, pdfFile };
 
 function downloadBlob(blob, fileName) {
   const url = URL.createObjectURL(blob);
@@ -435,6 +466,7 @@ async function runUnlock() {
     const zip = files.length > 1 ? new JSZip() : null;
     const usedNames = new Set();
     const failures = [];
+    const outputs = [];
     let saved = 0;
     for (let i = 0; i < files.length; i += 1) {
       const file = files[i];
@@ -446,6 +478,7 @@ async function runUnlock() {
         let suffix = 2;
         while (usedNames.has(name.toLowerCase())) name = `${base}_${suffix++}.pdf`;
         usedNames.add(name.toLowerCase());
+        outputs.push(pdfFile(bytes, name));
         if (zip) zip.file(name, bytes);
         else downloadBlob(new Blob([bytes], { type: 'application/pdf' }), name);
         saved += 1;
@@ -466,6 +499,7 @@ async function runUnlock() {
         (failures.length ? `\n실패 ${failures.length}개:\n${failures.join('\n')}` : ''),
       !saved
     );
+    if (saved) offerNext(outputs, 'unlock');
   });
 }
 
