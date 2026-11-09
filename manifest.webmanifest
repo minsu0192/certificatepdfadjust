@@ -1,0 +1,21 @@
+{
+  "name": "업무 워크스페이스",
+  "short_name": "워크스페이스",
+  "description": "PDF·이미지 편집과 인보이스·통관 서류 정리를 브라우저 안에서 처리하는 업무 도구 모음",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fb",
+  "theme_color": "#253654",
+  "lang": "ko",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "PDF · 이미지 워크스페이스", "url": "/tools/pdf-workbench/" },
+    { "name": "수입신고필증 정리", "url": "/tools/import-certificate/" }
+  ]
+}
