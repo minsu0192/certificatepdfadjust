@@ -40,31 +40,49 @@
           <p class="drop-zone__secondary">또는 클릭해서 파일 선택 · 한 번에 PDF 한 개를 편집합니다.</p>
         </div>
         <p id="editorStatus" class="note" role="status">PDF를 열면 페이지 미리보기가 표시됩니다. 새 파일을 열면 현재 편집 작업이 초기화됩니다.</p>
-        <div id="editorWorkspace" hidden>
-          <div class="editor-actions">
-            <button class="btn btn--secondary" id="editUndo">실행 취소</button><button class="btn btn--secondary" id="editRedo">다시 실행</button>
-            <label class="field">저장 파일명<input id="editName" value="edited.pdf"></label>
-            <button class="btn btn--primary" id="editSave">전체 PDF 저장</button>
+        <div id="editorWorkspace" data-mode="pages" aria-busy="false" hidden>
+          <div class="editor-topbar">
+            <div class="segmented" role="group" aria-label="편집 모드"><button type="button" id="editModePages" aria-pressed="true">페이지 정리</button><button type="button" id="editModeContent" aria-pressed="false">내용 편집</button></div>
+            <div class="history-actions"><button type="button" class="btn btn--secondary" id="editUndo" title="실행 취소 (Ctrl+Z)">↶ 실행 취소</button><button type="button" class="btn btn--secondary" id="editRedo" title="다시 실행 (Ctrl+Shift+Z)">↷ 다시 실행</button></div>
+            <div class="save-actions"><input id="editName" value="edited.pdf" aria-label="저장 파일명" spellcheck="false"><button type="button" class="btn btn--primary" id="editSave">PDF 저장</button></div>
           </div>
+          <p id="editModeHint" class="editor-hint mode-hint"></p>
+          <p id="editMessage" class="edit-message" role="alert" hidden></p>
           <div class="editor-layout">
-            <aside class="page-sidebar"><h3>페이지 정리</h3><p class="editor-hint">드래그 또는 ← → 버튼으로 순서를 바꿉니다. 체크한 페이지를 추출·회전·삭제할 수 있습니다.</p>
-              <label class="field">선택할 페이지 (현재 순서)<input id="editRange" placeholder="예: 1-3,5"></label>
-              <div class="small-actions"><button id="editSelect" class="btn btn--secondary">범위 선택</button><button id="editAll" class="btn btn--secondary">전체 선택</button><button id="editNone" class="btn btn--secondary">선택 해제</button></div>
-              <p id="editCount" role="status"></p>
-              <div class="small-actions"><button id="editExtract" class="btn btn--secondary">선택 → PDF</button><button id="editZip" class="btn btn--secondary">페이지별 ZIP</button><button id="editRotate" class="btn btn--secondary">선택 회전 ↻</button><button id="editDelete" class="btn btn--secondary">선택 삭제</button></div>
+            <aside class="page-sidebar" aria-label="페이지 목록">
+              <div class="page-tools">
+                <div class="range-select"><input id="editRange" placeholder="페이지 범위 (예: 1-3,5)" aria-label="선택할 페이지 범위 (현재 순서)"><button type="button" id="editSelect" class="btn btn--secondary">범위 선택</button><button type="button" id="editAll" class="btn btn--secondary">전체 선택</button><button type="button" id="editNone" class="btn btn--secondary">선택 해제</button></div>
+                <div class="order-tools"><span>전체 순서</span><button type="button" id="editReverse" class="btn btn--secondary">뒤집기</button><button type="button" id="editOriginal" class="btn btn--secondary">원본 순서로</button></div>
+              </div>
+              <div id="editBulk" class="bulk-bar" hidden>
+                <strong id="editCount" role="status"></strong>
+                <div class="bulk-group" aria-label="선택한 페이지 정리"><button type="button" id="editFirst" class="btn btn--secondary">맨 앞으로</button><button type="button" id="editLast" class="btn btn--secondary">맨 뒤로</button><button type="button" id="editRotate" class="btn btn--secondary">회전 ↻</button><button type="button" id="editDelete" class="btn btn--secondary btn--danger">삭제</button></div>
+                <div class="bulk-group" aria-label="선택한 페이지 내보내기"><button type="button" id="editExtract" class="btn btn--secondary">선택 → PDF</button><button type="button" id="editZip" class="btn btn--secondary">페이지별 ZIP</button></div>
+              </div>
+              <p id="editPageHelp" class="editor-hint page-help"></p>
               <div id="editPages" class="page-grid"></div>
             </aside>
             <div class="editor-main">
-              <div class="edit-controls">
-                <label class="field">도구<select id="editTool"><option value="text">텍스트 추가</option><option value="cover">흰색으로 가리기</option><option value="highlight">형광펜</option><option value="image">이미지 · 서명 · 도장</option></select></label>
-                <label class="field" id="editTextField">추가할 텍스트<input id="editText" placeholder="내용을 입력하세요"></label>
-                <label class="field">글자 크기 (pt)<input id="editSize" type="number" min="6" max="144" value="16"></label>
-                <label class="field">색상<input id="editColor" type="color" value="#245c3b"></label>
-                <label class="field" id="editImageField">이미지 선택<input id="editImage" type="file" accept="image/png,image/jpeg"></label>
+              <div class="tool-bar" role="toolbar" aria-label="편집 도구">
+                <button type="button" data-tool="select" aria-pressed="true" title="선택 · 이동 (V)"><span aria-hidden="true">↖</span>선택<kbd>V</kbd></button>
+                <button type="button" data-tool="text" aria-pressed="false" title="텍스트 추가 (T)"><span aria-hidden="true">T</span>텍스트<kbd>T</kbd></button>
+                <button type="button" data-tool="cover" aria-pressed="false" title="흰색으로 가리기 (E)"><span aria-hidden="true">▭</span>가리기<kbd>E</kbd></button>
+                <button type="button" data-tool="highlight" aria-pressed="false" title="형광펜 (H)"><span aria-hidden="true">▤</span>형광펜<kbd>H</kbd></button>
+                <button type="button" data-tool="image" aria-pressed="false" title="이미지 · 서명 · 도장 (I)"><span aria-hidden="true">▣</span>이미지<kbd>I</kbd></button>
+                <input type="hidden" id="editTool" value="select">
               </div>
-              <p class="editor-hint" id="editHelp">텍스트를 입력한 뒤 페이지에서 원하는 위치를 클릭하세요. 추가 내용은 실행 취소로 되돌릴 수 있습니다.</p>
-              <div class="preview-scroll"><div id="editStage"><canvas id="editBase"></canvas><canvas id="editOverlay" aria-label="PDF 편집 미리보기"></canvas></div></div>
-              <p class="note">텍스트는 한글을 포함해 이미지로 추가됩니다. 기존 문구는 흰색으로 가린 뒤 새 글자를 추가할 수 있습니다. 가리기는 원본 텍스트의 영구 삭제가 아니며, 기존 문장 자체를 직접 수정하지 않습니다.</p>
+              <div class="edit-controls">
+                <span id="editSelectionLabel" class="selection-label">도구 설정</span>
+                <label class="field" id="editTextField">텍스트<textarea id="editText" rows="1" placeholder="내용을 입력하세요 (Shift+Enter 줄바꿈)"></textarea></label>
+                <label class="field field--compact" id="editSizeField">크기 (pt)<input id="editSize" type="number" min="6" max="144" value="16"></label>
+                <label class="field field--compact" id="editColorField">색상<input id="editColor" type="color" value="#263a68"></label>
+                <label class="field field--compact" id="editWidthField">너비 (pt)<input id="editObjectWidth" type="number" min="3" step="1"></label>
+                <label class="field" id="editImageField">이미지 파일<input id="editImage" type="file" accept="image/png,image/jpeg"></label>
+                <div id="editSelection" class="selection-actions" hidden><button type="button" id="editDuplicate" class="btn btn--secondary" title="복제 (Ctrl+D)">복제</button><button type="button" id="editRemove" class="btn btn--secondary btn--danger" title="삭제 (Delete)">삭제</button></div>
+              </div>
+              <div class="preview-toolbar"><div><button type="button" id="editPrev" class="btn btn--secondary" aria-label="이전 페이지" title="이전 페이지 (PageUp)">←</button><label class="page-jump">페이지 <select id="editPageJump" aria-label="편집할 페이지"></select></label><button type="button" id="editNext" class="btn btn--secondary" aria-label="다음 페이지" title="다음 페이지 (PageDown)">→</button></div><p id="editHelp" class="editor-hint"></p><label class="zoom-field">보기 <select id="editZoom"><option value="fit">페이지 맞춤</option><option value="100">너비 맞춤</option><option value="150">150%</option><option value="200">200%</option></select></label></div>
+              <div class="preview-scroll"><div id="editStage"><canvas id="editBase"></canvas><canvas id="editOverlay" tabindex="0" aria-label="PDF 편집 미리보기. 추가 항목을 선택하고 드래그하거나 방향키로 이동할 수 있습니다."></canvas></div></div>
+              <p class="note">추가한 텍스트·도형·이미지는 저장할 때 페이지 위에 이미지로 합쳐집니다(한글 지원). 기존 문구를 바꾸려면 흰색으로 가린 뒤 새 텍스트를 올리세요. 가리기는 원본 텍스트를 영구 삭제하지 않습니다.</p>
             </div>
           </div>
         </div>
