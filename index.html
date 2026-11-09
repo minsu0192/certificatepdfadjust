@@ -1,99 +1,55 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LVMH Fashion Group 업무 자동화&nbsp;도구</title>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>업무 워크스페이스 | LVMH Fashion Group</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="portal.css">
 </head>
 <body>
+  <a class="skip-link" href="#toolsTitle">도구 목록으로 건너뛰기</a>
   <header class="portal-header">
-    <a class="brand" href="/" aria-label="홈">
-      <span class="brand-mark">FG</span>
-      <span><strong>LVMH Fashion Group</strong><small>업무 자동화&nbsp;도구</small></span>
-    </a>
-    <nav class="header-actions"><a href="#toolsTitle">업무 도구</a><a href="/support/">오류 신고</a><span class="creator">Created by <strong>Minsu Bae</strong></span></nav>
+    <a class="brand" href="/" aria-label="LVMH Fashion Group 홈"><span class="brand-mark">FG<span></span></span><span><strong>LVMH Fashion Group</strong><small>업무 워크스페이스</small></span></a>
+    <nav class="header-actions" aria-label="주 메뉴"><a href="#toolsTitle" class="nav-current">전체 도구</a><a href="/support/">도움 · 오류 신고 <span aria-hidden="true">↗</span></a></nav>
   </header>
-
   <main>
-    <section class="hero">
-      <div>
-        <span class="eyebrow">업무 자동화 포털</span>
-        <h1>LVMH Fashion Group 업무 자동화&nbsp;도구</h1>
-        <p>반복되는 문서·메일 정리 업무를 Excel 파일로 빠르게 변환합니다.</p>
-      </div>
-      <div class="hero-panel">
-        <strong>문서·메일 Excel 변환</strong>
-        <span>브라우저 내부 처리</span>
-      </div>
+    <section class="hero" aria-labelledby="heroTitle">
+      <div class="hero-copy"><span class="eyebrow"><span class="live-dot"></span> YOUR EVERYDAY WORKSPACE</span><h1 id="heroTitle">반복 업무는 가볍게.<br><span>중요한 일에 더 집중하세요.</span></h1><p>흩어진 문서와 메일을 정리하고, 필요한 데이터만 꺼내세요.<br class="desktop-break"> 매일의 업무에 필요한 도구를 한곳에 모았습니다.</p><div class="hero-details"><span>6개의 업무 도구</span><span>설치 없이 바로 사용</span><span>브라우저 내 파일 처리</span></div></div>
+      <a class="featured-tool" href="/tools/pdf-workbench/"><div class="featured-top"><span>DOCUMENT STUDIO</span><span class="featured-arrow" aria-hidden="true">↗</span></div><div class="featured-symbol" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg><span>PDF</span><span>IMG</span></div><h2>PDF와 이미지,<br>한 번에 정리하세요.</h2><p>편집 · 페이지 추출 · 이미지 변환</p><span class="featured-link">워크스페이스 열기 <span aria-hidden="true">→</span></span></a>
     </section>
-
     <section class="tools-section" aria-labelledby="toolsTitle">
-      <div class="section-heading">
-        <div><span class="section-kicker">도구 선택</span><h2 id="toolsTitle">사용할 업무를 선택하세요</h2></div>
-        <span class="tool-count">9개 도구</span>
-      </div>
-      <nav class="category-tabs" aria-label="도구 분류">
-        <button class="category-tab is-active" data-category="all">전체</button>
-        <button class="category-tab" data-category="customs">통관·물류</button>
-        <button class="category-tab" data-category="invoice">인보이스·정산</button>
-        <button class="category-tab" data-category="pdf">PDF 업무지원</button>
-      </nav>
-
-      <div class="tool-grid">
-        <a class="tool-card" data-category="pdf" href="/tools/pdf-workbench/">
-          <div class="tool-card__top"><span class="tool-icon tool-icon--blue">PDF</span><span class="status status--ready">사용 가능</span></div>
-          <h3>PDF 업무지원</h3>
-          <p>여러 PDF 합치기, PDF 페이지 분리, PDF를 JPG로 변환, PDF 압축, 잠금 해제를 브라우저 안에서 처리합니다.</p>
-          <div class="tool-card__meta"><span>PDF</span><span>→</span><span>PDF/JPG/ZIP</span></div>
-          <span class="tool-card__enter">열기 <b>→</b></span>
-        </a>
-
-        <a class="tool-card" data-category="customs" href="/tools/import-certificate/">
-          <div class="tool-card__top"><span class="tool-icon tool-icon--green">PDF</span><span class="status status--ready">사용 가능</span></div>
-          <h3>수입신고필증 정리</h3>
-          <p>수입신고필증 PDF 폴더에서 통관·품목 정보를 추출해 원하는 열 순서의 Excel로 정리합니다.</p>
-          <div class="tool-card__meta"><span>PDF 폴더</span><span>→</span><span>Excel</span></div>
-          <span class="tool-card__enter">열기 <b>→</b></span>
-        </a>
-
-        <a class="tool-card" data-category="invoice" href="/tools/dhl-invoice/">
-          <div class="tool-card__top"><span class="tool-icon tool-icon--yellow">MAIL</span><span class="status status--ready">사용 가능</span></div>
-          <h3>DHL Pre-Alert 메일 본문 정리</h3>
-          <p>Outlook에서 내려받은 EML 파일을 폴더째 넣어 본문의 항공 수입 정보를 Excel로 정리합니다.</p>
-          <div class="tool-card__meta"><span>EML 폴더</span><span>→</span><span>Excel</span></div>
-          <span class="tool-card__enter">열기 <b>→</b></span>
-        </a>
-
-        <a class="tool-card" data-category="invoice" href="/tools/celine-credit-note/">
-          <div class="tool-card__top"><span class="tool-icon tool-icon--rose">CN</span><span class="status status--ready">사용 가능</span></div>
-          <h3>CELINE 크레딧 노트 정리</h3>
-          <p>크레딧 노트 문서에서 지정한 항목을 추출하고 일관된 형식의 Excel로 정리합니다.</p>
-          <div class="tool-card__meta"><span>문서 폴더</span><span>→</span><span>Excel</span></div>
-          <span class="tool-card__enter">열기 <b>→</b></span>
-        </a>
-
-        <a class="tool-card" data-category="invoice" href="/tools/fedex-dhl-extractor/">
-          <div class="tool-card__top"><span class="tool-icon tool-icon--blue">PDF</span><span class="status status--ready">사용 가능</span></div>
-          <h3>FedEx Invoice Check</h3>
-          <p>FedEx Duty는 AWB별 VAT를 추출하고 Freight는 레콘 제외 대상으로 분류합니다.</p>
-          <div class="tool-card__meta"><span>FedEx PDF</span><span>→</span><span>Excel</span></div>
-          <span class="tool-card__enter">열기 <b>→</b></span>
-        </a>
-
-        <a class="tool-card" data-category="invoice" href="/tools/dhl-pdf-extractor/">
-          <div class="tool-card__top"><span class="tool-icon tool-icon--yellow">DHL</span><span class="status status--ready">사용 가능</span></div>
-          <h3>DHL Invoice Check</h3>
-          <p>DHL 마감 인보이스와 eTradebill PDF를 별도 시트 구조로 정리합니다.</p>
-          <div class="tool-card__meta"><span>DHL PDF</span><span>→</span><span>Excel</span></div>
-          <span class="tool-card__enter">열기 <b>→</b></span>
-        </a>
-      </div>
+      <div class="section-heading"><div><span class="section-kicker">TOOL LIBRARY</span><h2 id="toolsTitle" tabindex="-1">어떤 작업을 시작할까요?</h2></div><label class="tool-search"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input type="search" id="toolSearch" placeholder="도구 이름, 파일 형식 검색" aria-label="도구 검색"></label></div>
+      <div class="filter-bar"><nav class="category-tabs" aria-label="도구 분류"><button class="category-tab is-active" data-category="all" aria-pressed="true">전체 <span>6</span></button><button class="category-tab" data-category="pdf" aria-pressed="false">문서 · 이미지</button><button class="category-tab" data-category="customs" aria-pressed="false">통관 · 물류</button><button class="category-tab" data-category="invoice" aria-pressed="false">인보이스 · 정산</button></nav><span class="tool-count" id="toolCount" role="status">6개 도구</span></div>
+      <div class="tool-grid"><a class="tool-card" data-category="pdf" data-keywords="PDF 이미지 편집 분리 합치기 압축 잠금 PNG JPG JPEG WEBP" href="/tools/pdf-workbench/">
+          <div class="tool-card__top"><span class="tool-icon tool-icon--pdf"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg></span><span class="tool-category">문서 · 이미지</span></div>
+          <h3>PDF · 이미지 워크스페이스</h3><p>페이지 편집·추출부터 JPG, PNG, WebP 변환까지. 문서와 이미지를 한곳에서 다룹니다.</p>
+          <div class="tool-card__bottom"><span class="tool-card__meta">PDF · 이미지 <span aria-hidden="true">→</span> 편집 / 변환</span><span class="card-arrow" aria-hidden="true">↗</span></div>
+        </a><a class="tool-card" data-category="customs" data-keywords="통관 물류 수입 신고 필증 금액 집계" href="/tools/import-certificate/">
+          <div class="tool-card__top"><span class="tool-icon tool-icon--customs"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5v8l-9 5-9-5V8zM3 8l9 5 9-5M12 13v8M7 5.8l9 5"/></svg></span><span class="tool-category">통관 · 물류</span></div>
+          <h3>수입신고필증 정리</h3><p>통관 정보와 품목별 금액을 추출하고, 필요한 열 순서로 Excel을 만듭니다.</p>
+          <div class="tool-card__bottom"><span class="tool-card__meta">수입신고필증 PDF <span aria-hidden="true">→</span> Excel</span><span class="card-arrow" aria-hidden="true">↗</span></div>
+        </a><a class="tool-card" data-category="invoice" data-keywords="DHL pre alert 메일 아웃룩 outlook 항공 본문" href="/tools/dhl-invoice/">
+          <div class="tool-card__top"><span class="tool-icon tool-icon--invoice"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></span><span class="tool-category">인보이스 · 정산</span></div>
+          <h3>DHL Pre-Alert 메일 정리</h3><p>Outlook EML 파일에서 항공 수입 정보를 읽어 메일 정리 시간을 줄입니다.</p>
+          <div class="tool-card__bottom"><span class="tool-card__meta">EML 메일 <span aria-hidden="true">→</span> Excel</span><span class="card-arrow" aria-hidden="true">↗</span></div>
+        </a><a class="tool-card" data-category="invoice" data-keywords="CELINE 셀린 크레딧 노트 credit note" href="/tools/celine-credit-note/">
+          <div class="tool-card__top"><span class="tool-icon tool-icon--invoice"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2ZM8 8h6M8 12h6M8 16h3"/><path d="m17 12 3 3 3-3"/></svg></span><span class="tool-category">인보이스 · 정산</span></div>
+          <h3>CELINE 크레딧 노트</h3><p>Credit Note의 문서 정보와 품목별 금액을 일관된 Excel 형식으로 정리합니다.</p>
+          <div class="tool-card__bottom"><span class="tool-card__meta">Credit Note PDF <span aria-hidden="true">→</span> Excel</span><span class="card-arrow" aria-hidden="true">↗</span></div>
+        </a><a class="tool-card" data-category="invoice" data-keywords="FedEx 페덱스 인보이스 정산 duty freight VAT AWB" href="/tools/fedex-dhl-extractor/">
+          <div class="tool-card__top"><span class="tool-icon tool-icon--invoice"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 11h3m-3 5 2 2 5-5"/></svg></span><span class="tool-category">인보이스 · 정산</span></div>
+          <h3>FedEx Invoice Check</h3><p>Duty·Freight를 구분하고, AWB별 VAT 금액을 추출해 정산을 돕습니다.</p>
+          <div class="tool-card__bottom"><span class="tool-card__meta">FedEx PDF <span aria-hidden="true">→</span> Excel</span><span class="card-arrow" aria-hidden="true">↗</span></div>
+        </a><a class="tool-card" data-category="invoice" data-keywords="DHL 디에이치엘 인보이스 정산 etradebill 세금" href="/tools/dhl-pdf-extractor/">
+          <div class="tool-card__top"><span class="tool-icon tool-icon--invoice"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span><span class="tool-category">인보이스 · 정산</span></div>
+          <h3>DHL Invoice Check</h3><p>마감 인보이스와 eTradebill에서 정산 금액과 발급 정보를 추출합니다.</p>
+          <div class="tool-card__bottom"><span class="tool-card__meta">DHL PDF <span aria-hidden="true">→</span> Excel</span><span class="card-arrow" aria-hidden="true">↗</span></div>
+        </a></div>
+      <div class="empty-state" id="emptyState" hidden><strong>검색 결과가 없습니다.</strong><p>다른 도구 이름이나 파일 형식으로 찾아보세요.</p><button type="button" id="clearFilters">전체 도구 보기</button></div>
     </section>
+    <aside class="help-banner"><div><span class="help-icon" aria-hidden="true">?</span><div><strong>작업 중 막히는 부분이 있나요?</strong><p>오류 상황을 남겨 주시면 개선에 도움이 됩니다.</p></div></div><a href="/support/">오류 보고서 만들기 <span aria-hidden="true">↗</span></a></aside>
   </main>
-
-  <footer>Created by <strong>Minsu Bae</strong><span>·</span>LVMH Fashion Group 업무 자동화&nbsp;도구</footer>
+  <footer><span>LVMH Fashion Group <span class="footer-divider">/</span> 업무 워크스페이스</span><span>Created by <strong>Minsu Bae</strong></span></footer>
   <script src="portal.js"></script>
 </body>
 </html>

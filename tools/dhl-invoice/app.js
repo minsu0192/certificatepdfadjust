@@ -122,10 +122,11 @@ function extractInvoiceFields(text) {
   };
 }
 function extractReferenceValue(text, label, stopLabels) {
-  const stop = stopLabels.map(value => `${value}\\s*:`).join('|');
-  const pattern = new RegExp(`${label}\\s*:\\s*([\\s\\S]*?)(?=\\s*(?:${stop})|\\n\\s*품명|\\n\\s*서비스\\s*레벨|$)`, 'i');
+  const token = '[A-Z0-9가-힣][A-Z0-9가-힣\\s/.-]{0,24}';
+  const stop = stopLabels.map(value => `${value}\\s*(?::|(?=\\s+${token}))`).join('|');
+  const pattern = new RegExp(`(?:^|\\n|\\s)${label}\\s*(?::|(?=\\s+${token}))\\s*([\\s\\S]*?)(?=\\s*(?:${stop})|\\n\\s*품명|\\n\\s*서비스\\s*레벨|$)`, 'i');
   const match = text.match(pattern);
-  return match ? match[1].replace(/\s+/g, ' ').replace(/,$/, '').trim() : '';
+  return match ? match[1].replace(/\s+/g, ' ').replace(/[,;:]$/, '').trim() : '';
 }
 function normalizeBody(text) { return text.replace(/\r/g, '').replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n'); }
 function htmlToText(html) { const doc = new DOMParser().parseFromString(html, 'text/html'); doc.querySelectorAll('br').forEach(node => node.replaceWith('\n')); doc.querySelectorAll('p,div,tr').forEach(node => node.append('\n')); return doc.body.textContent || ''; }
