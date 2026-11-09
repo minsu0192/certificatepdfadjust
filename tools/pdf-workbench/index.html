@@ -8,6 +8,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="vendor/fontkit/fontkit.umd.min.js" defer></script>
+  <script src="ttf-subset.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -65,6 +67,7 @@
             <div class="editor-main">
               <div class="tool-bar" role="toolbar" aria-label="편집 도구">
                 <button type="button" data-tool="select" aria-pressed="true" title="선택 · 이동 (V)"><span aria-hidden="true">↖</span>선택<kbd>V</kbd></button>
+                <button type="button" data-tool="retext" aria-pressed="false" title="원래 있던 글자 수정 (R)"><span aria-hidden="true">✎</span>원문 수정<kbd>R</kbd></button>
                 <button type="button" data-tool="text" aria-pressed="false" title="텍스트 추가 (T)"><span aria-hidden="true">T</span>텍스트<kbd>T</kbd></button>
                 <button type="button" data-tool="cover" aria-pressed="false" title="흰색으로 가리기 (E)"><span aria-hidden="true">▭</span>가리기<kbd>E</kbd></button>
                 <button type="button" data-tool="highlight" aria-pressed="false" title="형광펜 (H)"><span aria-hidden="true">▤</span>형광펜<kbd>H</kbd></button>
@@ -74,15 +77,16 @@
               <div class="edit-controls">
                 <span id="editSelectionLabel" class="selection-label">도구 설정</span>
                 <label class="field" id="editTextField">텍스트<textarea id="editText" rows="1" placeholder="내용을 입력하세요 (Shift+Enter 줄바꿈)"></textarea></label>
-                <label class="field field--compact" id="editSizeField">크기 (pt)<input id="editSize" type="number" min="6" max="144" value="16"></label>
+                <label class="field field--compact" id="editSizeField">크기 (pt)<input id="editSize" type="number" min="4" max="144" step="0.5" value="16"></label>
                 <label class="field field--compact" id="editColorField">색상<input id="editColor" type="color" value="#263a68"></label>
                 <label class="field field--compact" id="editWidthField">너비 (pt)<input id="editObjectWidth" type="number" min="3" step="1"></label>
+                <label class="redact-field" id="editRedactField"><input id="editRedact" type="checkbox"><span><b>영구 삭제</b><small>원래 글자까지 지웁니다 (이 페이지는 이미지로 저장)</small></span></label>
                 <label class="field" id="editImageField">이미지 파일<input id="editImage" type="file" accept="image/png,image/jpeg"></label>
                 <div id="editSelection" class="selection-actions" hidden><button type="button" id="editDuplicate" class="btn btn--secondary" title="복제 (Ctrl+D)">복제</button><button type="button" id="editRemove" class="btn btn--secondary btn--danger" title="삭제 (Delete)">삭제</button></div>
               </div>
               <div class="preview-toolbar"><div><button type="button" id="editPrev" class="btn btn--secondary" aria-label="이전 페이지" title="이전 페이지 (PageUp)">←</button><label class="page-jump">페이지 <select id="editPageJump" aria-label="편집할 페이지"></select></label><button type="button" id="editNext" class="btn btn--secondary" aria-label="다음 페이지" title="다음 페이지 (PageDown)">→</button></div><p id="editHelp" class="editor-hint"></p><label class="zoom-field">보기 <select id="editZoom"><option value="fit">페이지 맞춤</option><option value="100">너비 맞춤</option><option value="150">150%</option><option value="200">200%</option></select></label></div>
               <div class="preview-scroll"><div id="editStage"><canvas id="editBase"></canvas><canvas id="editOverlay" tabindex="0" aria-label="PDF 편집 미리보기. 추가 항목을 선택하고 드래그하거나 방향키로 이동할 수 있습니다."></canvas></div></div>
-              <p class="note">추가한 텍스트·도형·이미지는 저장할 때 페이지 위에 이미지로 합쳐집니다(한글 지원). 기존 문구를 바꾸려면 흰색으로 가린 뒤 새 텍스트를 올리세요. 가리기는 원본 텍스트를 영구 삭제하지 않습니다.</p>
+              <p class="note">추가한 텍스트는 실제 글자로 저장되어 검색·복사할 수 있습니다(한글 포함). <b>원문 수정</b>은 원래 글자를 흰색으로 덮고 새 글자를 올리는 방식이라, 덮인 원래 글자는 파일 안에 남아 있습니다. 금액·개인정보처럼 남으면 안 되는 내용은 <b>가리기 → 영구 삭제</b>를 사용하세요. 해당 페이지는 이미지로 저장되어 원래 글자가 완전히 사라집니다.</p>
             </div>
           </div>
         </div>
