@@ -8,12 +8,15 @@
     text: '페이지에서 넣을 위치를 클릭하세요. 추가 후 바로 내용을 입력할 수 있습니다.',
     cover: '가릴 영역을 드래그하세요. 민감한 정보는 \'영구 삭제\'를 켜야 원래 글자까지 지워집니다.',
     highlight: '강조할 영역을 드래그하세요.',
-    image: '이미지 파일을 고른 뒤 넣을 영역을 드래그하세요. 비율은 유지됩니다.'
+    crop: '남길 영역을 드래그하세요. 바깥 부분은 저장할 때 잘려 나갑니다. 다시 드래그하면 바뀝니다.',
+    image: '서명·도장을 고르거나 새로 그린 뒤 페이지를 클릭(기본 크기)하거나 드래그(원하는 크기)하세요.'
   };
   const LABEL = { text: '텍스트 선택됨', image: '이미지 선택됨', cover: '가리기 선택됨', highlight: '형광펜 선택됨' };
-  const NEW_LABEL = { select: '선택한 항목 없음', retext: '원문 수정', text: '새 텍스트', cover: '흰색 가리기', highlight: '형광펜', image: '이미지 · 서명 · 도장' };
+  const NEW_LABEL = { select: '선택한 항목 없음', retext: '원문 수정', text: '새 텍스트', cover: '흰색 가리기', highlight: '형광펜', image: '이미지 · 서명 · 도장', crop: '페이지 자르기' };
 
-  let source, preview, pages = [], active = 0, selected = new Set(), undo = [], redo = [];
+  let sources = [], pages = [], active = 0, selected = new Set(), undo = [], redo = [];
+  let nextId = 0, docGen = 0, thumbRun = null, autosaveTimer = null;
+  const thumbs = new Map();
   let viewport, imageData, renderedKey = '', anchor = null, dragIndex, start = null;
   let busy = false, rendering = false, working = false, dirty = false, editSession = false;
   let selectedObject = -1, gesture = null, messageTimer;
@@ -41,14 +44,30 @@
   const currentItem = () => current()?.items[selectedObject];
   const clone = value => JSON.parse(JSON.stringify(value));
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  // A document can mix pages from several PDFs (inserted files, blank pages): each page points at sources[p.src].
+  const pdfPage = p => sources[p.src].doc.getPage(p.original + 1);
+  const pageKey = p => `${p.src}:${p.original}:${p.rotation}`;
+  const thumbKey = p => `${p.src}:${p.original}`;
+  function sourceLabel(p) {
+    const s = sources[p.src]; if (!s) return '';
+    if (s.blank) return '빈 페이지';
+    if (p.src === 0) return `원본 ${p.original + 1}`;
+    const short = baseName(s.name); return `${short.length > 10 ? short.slice(0, 9) + '…' : short} ${p.original + 1}`;
+  }
+  async function addSource(bytes, name, blank = false) {
+    const lib = await PDFLib.PDFDocument.load(bytes);
+    const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+    sources.push({ name, lib, doc, bytes, blank }); return sources.length - 1;
+  }
+  const newPage = (src, original) => ({ id: nextId++, src, original, rotation: 0, items: [] });
 
   // ---------- history ----------
   const snapshot = () => ({ pages: clone(pages), active, selected: [...selected] });
-  function remember() { undo.push(snapshot()); if (undo.length > 60) undo.shift(); redo = []; dirty = true; }
+  function remember() { undo.push(snapshot()); if (undo.length > 60) undo.shift(); redo = []; dirty = true; scheduleAutosave(); }
   function restore(from, to) {
     if (!from.length) return;
     to.push(snapshot()); const s = from.pop();
-    pages = s.pages; active = Math.min(s.active, pages.length - 1); selected = new Set(s.selected); dirty = true;
+    pages = s.pages; active = Math.min(s.active, pages.length - 1); selected = new Set(s.selected); dirty = true; scheduleAutosave();
     return refresh();
   }
   function action(fn) {
@@ -84,7 +103,7 @@
       ? '① 페이지를 정리하고 ② 내용 편집에서 텍스트·서명을 넣은 뒤 ③ PDF 저장을 누르세요.'
       : '도구를 고르고 페이지 위를 클릭하거나 드래그하세요. 추가한 항목은 언제든 다시 선택해 고칠 수 있습니다.';
     $('editPageHelp').textContent = next === 'pages'
-      ? '클릭으로 선택 · Shift+클릭 범위 선택 · 드래그로 순서 변경(선택한 페이지는 함께 이동) · 더블클릭하면 내용 편집'
+      ? '클릭으로 선택 · Shift+클릭 범위 선택 · 드래그로 순서 변경(선택한 페이지는 함께 이동, 휴대폰은 길게 누른 뒤 끌기) · 더블클릭하면 내용 편집'
       : '편집할 페이지를 클릭하세요.';
     renderCards();
   }
@@ -98,21 +117,22 @@
   function renderCards() {
     $('editPageJump').replaceChildren(...pages.map((p, i) => new Option(`${i + 1} / ${pages.length}`, i)));
     const cards = pages.map((p, i) => {
-      const card = document.createElement('div'); card.className = 'page-card'; card.draggable = true; card.dataset.index = i;
+      const card = document.createElement('div'); card.className = 'page-card'; card.draggable = true; card.dataset.index = i; card.dataset.thumb = thumbKey(p);
       const check = document.createElement('input'); check.type = 'checkbox'; check.setAttribute('aria-label', `${i + 1}페이지 선택`);
       check.onchange = () => { if (locked()) { check.checked = selected.has(p.id); return; } toggleSelect(i, { shiftKey: false }, check.checked); };
       const open = document.createElement('button'); open.type = 'button'; open.className = 'page-open';
-      open.setAttribute('aria-label', `${i + 1}페이지 (원본 ${p.original + 1})`);
+      open.setAttribute('aria-label', `${i + 1}페이지 (${sourceLabel(p)})`);
       const frame = document.createElement('span'); frame.className = 'page-thumb';
-      const img = document.createElement('img'); img.src = p.thumb; img.alt = ''; img.draggable = false;
+      const img = document.createElement('img'); if (thumbs.has(thumbKey(p))) img.src = thumbs.get(thumbKey(p)); img.alt = ''; img.draggable = false;
       if (p.rotation) img.style.transform = `rotate(${p.rotation}deg)${p.rotation % 180 ? ' scale(.72)' : ''}`;
       frame.append(img);
       if (p.items.length) { const badge = document.createElement('em'); badge.className = 'page-badge'; badge.textContent = `편집 ${p.items.length}`; frame.append(badge); }
       const label = document.createElement('span'); label.className = 'page-label';
-      label.innerHTML = `<b>${i + 1}</b><small>원본 ${p.original + 1}${p.rotation ? ` · ${p.rotation}°` : ''}</small>`;
+      label.innerHTML = `<b>${i + 1}</b><small></small>`;
+      label.querySelector('small').textContent = `${sourceLabel(p)}${p.rotation ? ` · ${p.rotation}°` : ''}${p.crop ? ' · 자름' : ''}`;
       open.append(frame, label);
       open.onclick = e => {
-        if (locked()) return;
+        if (locked() || Date.now() < suppressClickUntil) return;
         if (mode() === 'pages') toggleSelect(i, e);
         else action(async () => { active = i; renderCards(); count(); await renderPreview(); })();
       };
@@ -132,9 +152,34 @@
         dragIndex = undefined; action(() => dropPages(from, i, after))();
       };
       card.ondragend = () => { dragIndex = undefined; clearDrop(); };
+      card.addEventListener('touchstart', e => touchStart(e, i), { passive: true });
       card.append(check, open, controls); return card;
     });
-    $('editPages').replaceChildren(...cards); updateSelectionUI();
+    $('editPages').replaceChildren(...cards); updateSelectionUI(); queueThumbs();
+  }
+  // Thumbnails are rendered in the background (visible cards first) so large PDFs open immediately.
+  function queueThumbs() {
+    if (thumbRun) return;
+    const gen = docGen; thumbRun = true; // set before starting: the loop may finish synchronously
+    (async () => {
+      try {
+        while (gen === docGen) {
+          const cards = [...$('editPages').children].filter(c => !thumbs.has(c.dataset.thumb));
+          if (!cards.length) break;
+          const visible = cards.find(c => { const r = c.getBoundingClientRect(); return r.width && r.bottom > -200 && r.top < innerHeight + 200; });
+          const key = (visible || cards[0]).dataset.thumb, [src, original] = key.split(':').map(Number);
+          const page = await sources[src].doc.getPage(original + 1), view = page.getViewport({ scale: 1 });
+          const vp = page.getViewport({ scale: 180 / Math.max(view.width, view.height) }), canvas = document.createElement('canvas');
+          canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
+          const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+          await page.render({ canvasContext: ctx, viewport: vp }).promise;
+          if (gen !== docGen) break;
+          const url = canvas.toDataURL('image/jpeg', .7); thumbs.set(key, url);
+          for (const card of $('editPages').querySelectorAll(`[data-thumb="${key}"]`)) card.querySelector('.page-thumb img').src = url;
+        }
+      } catch (e) { if (gen === docGen) console.warn('thumbnail', e); }
+      finally { thumbRun = null; }
+    })();
   }
   function updateSelectionUI() {
     for (const card of $('editPages').children) {
@@ -156,6 +201,37 @@
     }
     updateSelectionUI();
   }
+  // Touch: long-press a card, then drag it (HTML drag-and-drop does not work with fingers).
+  let touch = null, suppressClickUntil = 0;
+  function touchStart(e, i) {
+    if (mode() !== 'pages' || locked() || e.touches.length !== 1) return;
+    const t = e.touches[0]; touch = { i, x: t.clientX, y: t.clientY, active: false, target: null, after: false };
+    touch.timer = setTimeout(() => {
+      if (!touch) return; touch.active = true; navigator.vibrate?.(12);
+      const p = pages[i], group = selected.has(p.id) && selected.size > 1 ? selected.size : 1;
+      const ghost = document.createElement('div'); ghost.className = 'touch-ghost';
+      const img = document.createElement('img'); if (thumbs.has(thumbKey(p))) img.src = thumbs.get(thumbKey(p));
+      ghost.append(img); if (group > 1) { const b = document.createElement('b'); b.textContent = group; ghost.append(b); }
+      ghost.style.left = `${touch.x}px`; ghost.style.top = `${touch.y}px`; document.body.append(ghost); touch.ghost = ghost;
+      $('editPages').children[i]?.classList.add('is-dragging');
+    }, 380);
+  }
+  function touchEnd() {
+    if (!touch) return; clearTimeout(touch.timer);
+    const t = touch; touch = null; t.ghost?.remove(); clearDrop();
+    if (t.active) { suppressClickUntil = Date.now() + 400; if (t.target !== null) action(() => dropPages(t.i, t.target, t.after))(); }
+  }
+  document.addEventListener('touchmove', e => {
+    if (!touch) return; const t = e.touches[0];
+    if (!touch.active) { if (Math.hypot(t.clientX - touch.x, t.clientY - touch.y) > 10) { clearTimeout(touch.timer); touch = null; } return; }
+    e.preventDefault(); touch.ghost.style.left = `${t.clientX}px`; touch.ghost.style.top = `${t.clientY}px`;
+    const card = document.elementFromPoint(t.clientX, t.clientY)?.closest('.page-card');
+    for (const c of $('editPages').children) c.classList.remove('drop-before', 'drop-after');
+    if (card && $('editPages').contains(card)) { touch.target = Number(card.dataset.index); touch.after = dropAfter(card, t); card.classList.add(touch.after ? 'drop-after' : 'drop-before'); }
+    else touch.target = null;
+    if (t.clientY < 60) scrollBy(0, -12); else if (t.clientY > innerHeight - 60) scrollBy(0, 12);
+  }, { passive: false });
+  document.addEventListener('touchend', touchEnd); document.addEventListener('touchcancel', touchEnd);
   const dropAfter = (card, e) => { const r = card.getBoundingClientRect(); return e.clientX > r.left + r.width / 2; };
   function markDrop(card, e) { clearDrop(); card.classList.add(dropAfter(card, e) ? 'drop-after' : 'drop-before'); }
   function clearDrop() { for (const c of $('editPages').children) c.classList.remove('drop-before', 'drop-after', 'is-dragging'); }
@@ -182,7 +258,7 @@
     if (kind === 'first') next = [...picked, ...rest];
     if (kind === 'last') next = [...rest, ...picked];
     if (kind === 'reverse') next.reverse();
-    if (kind === 'original') next.sort((a, b) => a.original - b.original);
+    if (kind === 'original') next.sort((a, b) => a.src - b.src || a.original - b.original);
     if (next.every((p, k) => p === pages[k])) return notify('이미 그 순서입니다.');
     remember(); pages = next; active = pages.findIndex(p => p.id === id); await refresh();
   }
@@ -202,7 +278,8 @@
   $('editRotate').onclick = action(async () => {
     requireSelection(); remember();
     for (const p of pages.filter(q => selected.has(q.id))) {
-      const pg = await preview.getPage(p.original + 1); const vp = pg.getViewport({ scale: 1, rotation: (pg.rotate + p.rotation) % 360 });
+      const pg = await pdfPage(p); const vp = pg.getViewport({ scale: 1, rotation: (pg.rotate + p.rotation) % 360 });
+      if (p.crop) p.crop = { x: vp.height - p.crop.y - p.crop.h, y: p.crop.x, w: p.crop.h, h: p.crop.w };
       for (const item of p.items) { const oldX = item.x; item.x = vp.height - item.y; item.y = oldX; item.angle = ((item.angle || 0) + 90) % 360; }
       p.rotation = (p.rotation + 90) % 360;
     }
@@ -221,9 +298,9 @@
     const p = current(); if (!p || mode() !== 'content') return;
     if (!inRefresh) rendering = true;
     try {
-      const key = `${p.original}:${p.rotation}`;
+      const key = pageKey(p);
       if (key !== renderedKey) {
-        const page = await preview.getPage(p.original + 1);
+        const page = await pdfPage(p);
         viewport = page.getViewport({ scale: 1, rotation: (page.rotate + p.rotation) % 360 });
         const renderViewport = page.getViewport({ scale: SCALE, rotation: viewport.rotation });
         const base = $('editBase'), next = document.createElement('canvas');
@@ -253,7 +330,7 @@
   function draw(ctx, item, scale, onScreen = true) {
     ctx.save(); ctx.scale(scale, scale); ctx.translate(item.x, item.y); ctx.rotate((item.angle || 0) * Math.PI / 180);
     if (item.kind === 'text') {
-      ctx.font = `${item.size}px ${FONT}`; ctx.textBaseline = 'top'; ctx.fillStyle = item.color;
+      ctx.font = `${item.size}px ${FONT}`; ctx.textBaseline = 'top'; ctx.fillStyle = item.color; ctx.globalAlpha = item.opacity ?? 1;
       lines(item).forEach((line, k) => ctx.fillText(line, 0, k * item.size * LINE));
     } else if (item.kind === 'image') {
       const image = imageCache.get(item.data); if (image) ctx.drawImage(image, 0, 0, item.w, item.h);
@@ -286,6 +363,11 @@
       ctx.restore();
     }
     current().items.forEach((item, i) => draw(ctx, gesture && i === selectedObject ? gesture.draft : item, SCALE));
+    const crop = current().crop;
+    if (crop && !(draft && tool() === 'crop')) {
+      ctx.save(); ctx.scale(SCALE, SCALE); ctx.fillStyle = 'rgba(22,32,58,.42)'; ctx.beginPath(); ctx.rect(0, 0, viewport.width, viewport.height); ctx.rect(crop.x, crop.y, crop.w, crop.h); ctx.fill('evenodd');
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2 * pxToPt(); ctx.setLineDash([5 * pxToPt(), 4 * pxToPt()]); ctx.strokeRect(crop.x, crop.y, crop.w, crop.h); ctx.restore();
+    }
     const item = draft || (gesture ? gesture.draft : currentItem());
     if (!item) return;
     const size = itemSize(item), handle = 7 * pxToPt();
@@ -317,7 +399,8 @@
     $('editImageField').hidden = !!item || tool() !== 'image';
     $('editWidthField').hidden = !item || kind === 'text';
     $('editRedactField').hidden = kind !== 'cover';
-    $('editSelection').hidden = !item;
+    $('editCropField').hidden = tool() !== 'crop' || !!item; $('editCropClear').disabled = !current()?.crop; $('editCropAll').disabled = !current()?.crop;
+    $('editSelection').hidden = !item; if (!item) $('editCopyForm').hidden = true;
     $('editSelectionLabel').textContent = item ? (item.redact ? '영구 삭제 영역 선택됨' : LABEL[kind]) : NEW_LABEL[tool()];
     document.querySelector('.edit-controls').classList.toggle('is-selected', !!item);
     if (item) {
@@ -367,14 +450,144 @@
     imageData = null; const f = $('editImage').files[0]; if (!f) return;
     if (!['image/png', 'image/jpeg'].includes(f.type)) throw new Error('PNG 또는 JPG 이미지를 선택하세요.');
     imageData = await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(f); });
-    notify('이미지를 넣을 영역을 페이지에서 드래그하세요.');
+    $('editImage').value = ''; addStamp(imageData);
+    if (tool() !== 'image') setTool('image');
+    notify('페이지를 클릭하거나 드래그해 넣으세요.');
+  });
+
+  // ---------- signature & stamp library (localStorage, this browser only) ----------
+  const STAMP_KEY = 'pdfWorkbench.stamps.v1';
+  const loadStamps = () => { try { return JSON.parse(localStorage.getItem(STAMP_KEY) || '[]'); } catch { return []; } };
+  function saveStamps(list) {
+    while (list.length) { try { localStorage.setItem(STAMP_KEY, JSON.stringify(list)); return; } catch { list.pop(); } }
+    try { localStorage.removeItem(STAMP_KEY); } catch { /* unavailable */ }
+  }
+  function addStamp(data) {
+    if (data.length > 900000) { renderStamps(); return; } // very large photos are used once but not kept
+    const list = loadStamps().filter(st => st.data !== data); list.unshift({ id: uid(), data });
+    saveStamps(list.slice(0, 12)); renderStamps();
+  }
+  function renderStamps() {
+    const box = $('editStamps');
+    box.replaceChildren(...loadStamps().map(st => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'stamp'; b.setAttribute('aria-pressed', String(st.data === imageData)); b.title = '이 서명·도장 사용';
+      const img = document.createElement('img'); img.src = st.data; img.alt = '저장된 서명·도장';
+      const x = document.createElement('span'); x.className = 'stamp-remove'; x.textContent = '✕'; x.title = '보관함에서 삭제'; x.setAttribute('role', 'button');
+      x.onclick = e => { e.stopPropagation(); saveStamps(loadStamps().filter(o => o.id !== st.id)); if (imageData === st.data) imageData = null; renderStamps(); };
+      b.onclick = () => { imageData = st.data; if (tool() !== 'image') setTool('image'); renderStamps(); notify('페이지를 클릭하거나 드래그해 넣으세요.'); };
+      b.append(img, x); return b;
+    }));
+  }
+  const pad = $('signPad'), pctx = pad.getContext('2d'); let pen = null, inked = false;
+  const padPoint = e => { const r = pad.getBoundingClientRect(); return { x: (e.clientX - r.left) * pad.width / r.width, y: (e.clientY - r.top) * pad.height / r.height }; };
+  $('editSignDraw').onclick = () => { pctx.clearRect(0, 0, pad.width, pad.height); inked = false; $('signError').hidden = true; $('signDialog').showModal(); };
+  $('signClear').onclick = () => { pctx.clearRect(0, 0, pad.width, pad.height); inked = false; };
+  $('signCancel').onclick = () => $('signDialog').close();
+  pad.onpointerdown = e => {
+    pad.setPointerCapture(e.pointerId); pen = padPoint(e); inked = true; $('signError').hidden = true;
+    pctx.strokeStyle = pctx.fillStyle = document.querySelector('[name=signColor]:checked').value; pctx.lineWidth = 6; pctx.lineCap = pctx.lineJoin = 'round';
+    pctx.beginPath(); pctx.arc(pen.x, pen.y, 3, 0, Math.PI * 2); pctx.fill(); pctx.beginPath(); pctx.moveTo(pen.x, pen.y);
+  };
+  pad.onpointermove = e => {
+    if (!pen) return; const p = padPoint(e), mid = { x: (pen.x + p.x) / 2, y: (pen.y + p.y) / 2 };
+    pctx.quadraticCurveTo(pen.x, pen.y, mid.x, mid.y); pctx.stroke(); pctx.beginPath(); pctx.moveTo(mid.x, mid.y); pen = p;
+  };
+  pad.onpointerup = pad.onpointercancel = () => { pen = null; };
+  $('signUse').onclick = () => {
+    if (!inked) { $('signError').hidden = false; return; }
+    const d = pctx.getImageData(0, 0, pad.width, pad.height).data; let x0 = pad.width, y0 = pad.height, x1 = 0, y1 = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > 10) { const x = (i >> 2) % pad.width, y = Math.floor((i >> 2) / pad.width); x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    if (x1 <= x0) { $('signError').hidden = false; return; }
+    const m = 8, out = document.createElement('canvas'); out.width = x1 - x0 + m * 2; out.height = y1 - y0 + m * 2;
+    out.getContext('2d').drawImage(pad, x0 - m, y0 - m, out.width, out.height, 0, 0, out.width, out.height);
+    imageData = out.toDataURL('image/png'); addStamp(imageData); $('signDialog').close();
+    setTool('image'); renderStamps(); notify('페이지를 클릭하면 서명이 들어갑니다. 드래그하면 크기를 정할 수 있습니다.');
+  };
+  renderStamps();
+
+  // ---------- crop ----------
+  $('editCropClear').onclick = action(() => { if (!current().crop) return; remember(); delete current().crop; redraw(); selectionSettings(); renderCards(); });
+  $('editCropAll').onclick = action(async () => {
+    const c = current().crop; if (!c) return; remember();
+    for (const p of pages) { const vp = await pageViewport(p); const x = Math.min(c.x, vp.width - 10), y = Math.min(c.y, vp.height - 10); p.crop = { x, y, w: Math.min(c.w, vp.width - x), h: Math.min(c.h, vp.height - y) }; }
+    renderCards(); selectionSettings(); notify(`${pages.length}페이지에 같은 자르기 영역을 적용했습니다.`);
+  });
+
+  // ---------- copy an item to other pages ----------
+  $('editCopyPages').onclick = () => { const form = $('editCopyForm'); form.hidden = !form.hidden; if (!form.hidden) $('editCopyRange').focus(); };
+  $('editCopyCancel').onclick = () => { $('editCopyForm').hidden = true; };
+  $('editCopyRange').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('editCopyApply').click(); } };
+  $('editCopyApply').onclick = action(async () => {
+    const item = currentItem(); if (!item) return;
+    const raw = $('editCopyRange').value.trim();
+    const targets = (raw ? parsePageRange(raw, pages.length).map(n => n - 1) : pages.map((_, i) => i)).filter(i => i !== active);
+    if (!targets.length) throw new Error('복사할 다른 페이지가 없습니다.');
+    remember(); const cover = item.cover && current().items.find(it => it.uid === item.cover);
+    for (const i of targets) {
+      const coverCopy = cover && { ...cover, uid: uid() };
+      pages[i].items.push(...(coverCopy ? [coverCopy] : []), { ...item, uid: uid(), cover: coverCopy?.uid });
+    }
+    $('editCopyForm').hidden = true; renderCards(); notify(`${targets.length}페이지의 같은 위치에 복사했습니다.`);
+  });
+
+  // ---------- page numbers & watermark ----------
+  let batchMode = 'numbers';
+  function openBatch(next) {
+    if (locked() || !pages.length) return;
+    batchMode = next; const numbers = next === 'numbers';
+    $('batchTitle').textContent = numbers ? '페이지 번호 넣기' : '워터마크 넣기';
+    $('batchIntro').textContent = numbers ? '현재 페이지 순서대로 번호를 넣습니다. 다시 넣으면 기존 번호가 바뀝니다. 넣은 뒤에도 내용 편집에서 하나씩 고칠 수 있습니다.' : '페이지 가운데에 반투명 문구를 넣습니다. 다시 넣으면 기존 워터마크가 바뀝니다.';
+    $('batchNumberFields').hidden = !numbers; $('batchWatermarkFields').hidden = numbers;
+    $('batchRemove').textContent = numbers ? '기존 번호 지우기' : '기존 워터마크 지우기';
+    $('batchTarget').querySelector('[value=selected]').disabled = !selected.size; $('batchTarget').value = selected.size ? 'selected' : 'all';
+    $('batchDialog').showModal();
+  }
+  $('editPageNumbers').onclick = () => openBatch('numbers'); $('editWatermark').onclick = () => openBatch('watermark');
+  $('batchCancel').onclick = () => $('batchDialog').close();
+  $('wmOpacity').oninput = () => { $('wmOpacityValue').textContent = `${$('wmOpacity').value}%`; };
+  const batchTargets = () => $('batchTarget').value === 'selected' ? pages.map((p, i) => selected.has(p.id) ? i : -1).filter(i => i >= 0) : pages.map((_, i) => i);
+  function textWidth(text, size) { const ctx = overlay.getContext('2d'); ctx.save(); ctx.font = `${size}px ${FONT}`; const w = ctx.measureText(text).width; ctx.restore(); return w; }
+  async function pageViewport(p) { const pg = await pdfPage(p); return pg.getViewport({ scale: 1, rotation: (pg.rotate + p.rotation) % 360 }); }
+  $('batchApply').onclick = action(async () => {
+    const numbers = batchMode === 'numbers', tag = numbers ? 'pagenum' : 'watermark', targets = batchTargets();
+    if (!targets.length) throw new Error('적용할 페이지가 없습니다.');
+    const wmText = $('wmText').value.trim(); if (!numbers && !wmText) throw new Error('워터마크 문구를 입력하세요.');
+    await editorFont(); await document.fonts.ready; remember(); let added = 0;
+    for (const i of targets) {
+      const p = pages[i], vp = await pageViewport(p); p.items = p.items.filter(it => it.tag !== tag);
+      if (numbers) {
+        if ($('numSkipFirst').checked && i === 0) continue;
+        const start = Number($('numStart').value) || 0, size = clamp(Number($('numSize').value) || 10, 6, 48);
+        const text = $('numFormat').value.replace('{n}', i + start).replace('{total}', pages.length + start - 1);
+        const w = textWidth(text, size), h = size * LINE, margin = 26, pos = $('numPosition').value;
+        const x = pos.endsWith('c') ? (vp.width - w) / 2 : pos.endsWith('r') ? vp.width - margin - w : margin;
+        const y = pos.startsWith('t') ? margin * .8 : vp.height - margin - h;
+        p.items.push({ kind: 'text', uid: uid(), tag, text, size, color: $('numColor').value, angle: 0, x, y });
+      } else {
+        const angle = Number($('wmAngle').value), a = angle * Math.PI / 180;
+        let size = clamp(Number($('wmSize').value) || 72, 12, 200), w = textWidth(wmText, size);
+        const limit = (angle ? Math.hypot(vp.width, vp.height) * .75 : vp.width * .85); if (w > limit) { size = Math.max(12, size * limit / w); w = textWidth(wmText, size); }
+        const h = size * LINE, cx = vp.width / 2, cy = vp.height / 2;
+        const x = cx - (w / 2 * Math.cos(a) - h / 2 * Math.sin(a)), y = cy - (w / 2 * Math.sin(a) + h / 2 * Math.cos(a));
+        p.items.unshift({ kind: 'text', uid: uid(), tag, text: wmText, size: Math.round(size * 10) / 10, color: $('wmColor').value, opacity: Number($('wmOpacity').value) / 100, angle, x, y });
+      }
+      added++;
+    }
+    $('batchDialog').close(); await refresh();
+    notify(`${added}페이지에 ${numbers ? '페이지 번호' : '워터마크'}를 넣었습니다.`);
+  });
+  $('batchRemove').onclick = action(async () => {
+    const tag = batchMode === 'numbers' ? 'pagenum' : 'watermark', targets = batchTargets();
+    if (!targets.some(i => pages[i].items.some(it => it.tag === tag))) { $('batchDialog').close(); return notify('지울 항목이 없습니다.'); }
+    remember(); for (const i of targets) pages[i].items = pages[i].items.filter(it => it.tag !== tag);
+    $('batchDialog').close(); await refresh(); notify(batchMode === 'numbers' ? '페이지 번호를 지웠습니다.' : '워터마크를 지웠습니다.');
   });
 
   // ---------- existing text (원문 수정) ----------
   async function loadRuns() {
-    const p = current(); const key = `${p.original}:${p.rotation}`;
+    const p = current(); const key = pageKey(p);
     if (key === runsKey) return textRuns;
-    const page = await preview.getPage(p.original + 1); const content = await page.getTextContent();
+    const page = await pdfPage(p); const content = await page.getTextContent();
     textRuns = content.items.filter(it => it.str && it.str.trim() && it.transform && it.width > 0).map(it => {
       const tx = pdfjsLib.Util.transform(viewport.transform, it.transform);
       const angle = Math.atan2(tx[1], tx[0]), size = Math.hypot(tx[2], tx[3]), style = content.styles[it.fontName] || {};
@@ -451,7 +664,7 @@
       if (o.kind === 'text') d.size = Math.round(clamp(o.size * (l.x - 2) / gesture.size.w, MIN_SIZE, MAX_SIZE) * 10) / 10;
       else { d.w = Math.max(3, l.x - 2); d.h = o.kind === 'image' ? d.w * o.h / o.w : Math.max(3, l.y - 2); }
       redraw();
-    } else if (['cover', 'highlight', 'image'].includes(tool())) {
+    } else if (['cover', 'highlight', 'image', 'crop'].includes(tool())) {
       redraw({ kind: 'cover', x: Math.min(start.x, pos.x), y: Math.min(start.y, pos.y), w: Math.abs(start.x - pos.x), h: Math.abs(start.y - pos.y) });
     }
   };
@@ -463,6 +676,11 @@
       if (gesture && JSON.stringify(gesture.draft) !== JSON.stringify(gesture.original)) { remember(); current().items[selectedObject] = { ...gesture.draft }; }
       gesture = null; redraw(); selectionSettings(); count(); return;
     }
+    if (kind === 'crop') {
+      const crop = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+      if (crop.w < 10 || crop.h < 10) { redraw(); return notify('남길 영역을 드래그하세요.', true); }
+      remember(); current().crop = crop; redraw(); selectionSettings(); renderCards(); return;
+    }
     await action(async () => {
       const item = { kind, x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y), color: $('editColor').value, angle: 0 };
       let placeholder = false;
@@ -471,13 +689,15 @@
         item.text = placeholder ? '텍스트' : typed; item.size = clamp(Number($('editSize').value) || 16, MIN_SIZE, MAX_SIZE); item.x = a.x; item.y = a.y;
         delete item.w; delete item.h; await document.fonts.ready;
       } else {
-        if (item.w < 3 || item.h < 3) throw new Error('마우스로 드래그해 영역을 지정하세요.');
         if (kind === 'image') {
-          if (!imageData) { $('editImage').click(); throw new Error('먼저 넣을 PNG/JPG 이미지를 선택하세요.'); }
+          if (!imageData) throw new Error('먼저 서명을 그리거나 저장된 서명·이미지를 고르세요.');
           const img = new Image(); img.src = imageData; await img.decode();
-          const factor = Math.min(item.w / img.width, item.h / img.height); item.w = img.width * factor; item.h = img.height * factor; item.data = imageData;
-          delete item.color;
-        }
+          if (item.w < 3 || item.h < 3) { // click: default size centred on the click
+            item.w = Math.min(150, viewport.width * .3, img.width); item.h = item.w * img.height / img.width;
+            item.x = clamp(a.x - item.w / 2, 0, Math.max(0, viewport.width - item.w)); item.y = clamp(a.y - item.h / 2, 0, Math.max(0, viewport.height - item.h));
+          } else { const factor = Math.min(item.w / img.width, item.h / img.height); item.w = img.width * factor; item.h = img.height * factor; }
+          item.data = imageData; delete item.color;
+        } else if (item.w < 3 || item.h < 3) throw new Error('마우스로 드래그해 영역을 지정하세요.');
         if (kind === 'cover') { delete item.color; item.redact = $('editRedact').checked; }
       }
       item.uid = uid(); await prepareImages([item]); remember(); current().items.push(item);
@@ -494,7 +714,7 @@
 
   // ---------- keyboard ----------
   document.addEventListener('keydown', event => {
-    if (!panel.classList.contains('is-active') || !pages.length || locked()) return;
+    if (!panel.classList.contains('is-active') || !pages.length || locked() || document.querySelector('dialog[open]')) return;
     const typing = /INPUT|TEXTAREA|SELECT/.test(event.target.tagName), mod = event.ctrlKey || event.metaKey, key = event.key.toLowerCase();
     if (typing) return;
     if (mod && (key === 'z' || key === 'y')) { event.preventDefault(); const redoKey = key === 'y' || event.shiftKey; action(() => redoKey ? restore(redo, undo) : restore(undo, redo))(); return; }
@@ -509,7 +729,7 @@
     const item = currentItem();
     if (mod && key === 'd' && item) { event.preventDefault(); action(duplicateObject)(); return; }
     if (mod || event.altKey) return;
-    const shortcuts = { v: 'select', r: 'retext', t: 'text', e: 'cover', h: 'highlight', i: 'image' };
+    const shortcuts = { v: 'select', r: 'retext', t: 'text', e: 'cover', h: 'highlight', i: 'image', c: 'crop' };
     if (shortcuts[key]) { event.preventDefault(); setTool(shortcuts[key]); return; }
     if (key === 'escape') { selectObject(-1); setTool('select'); return; }
     if ((key === 'delete' || key === 'backspace') && item) { event.preventDefault(); action(removeObject)(); return; }
@@ -523,39 +743,120 @@
   document.addEventListener('keyup', event => { if (event.key.startsWith('Arrow')) editSession = false; });
 
   // ---------- open ----------
+  function resetDocument() {
+    docGen++; for (const src of sources) src.doc.destroy().catch(() => {});
+    sources = []; pages = []; thumbs.clear(); renderedKey = ''; runsKey = ''; viewport = null; nextId = 0;
+    active = 0; selected.clear(); anchor = null; undo = []; redo = []; imageData = null; dirty = false; imageCache.clear();
+  }
+  async function showDocument(fileName) {
+    $('editImage').value = ''; $('editZoom').value = 'fit'; workspace.hidden = false; $('editorDrop').classList.add('has-document'); $('editRestore').hidden = true;
+    setMode('pages'); setTool('select'); await refresh();
+    $('editorStatus').textContent = `${fileName} · ${pages.length}페이지 · 원본 파일은 변경되지 않습니다.`;
+  }
   function openFiles(files) {
     if (!files.length || locked()) return;
     if (dirty && !confirm('저장하지 않은 편집 내용이 있습니다. 새 PDF를 열면 사라집니다. 계속할까요?')) return;
     return action(async () => {
-      if (files.length !== 1) throw new Error('편집할 PDF 한 개만 놓아 주세요. 여러 파일은 PDF 합치기 탭에서 합칠 수 있습니다.');
+      if (files.length !== 1) throw new Error('편집할 PDF 한 개만 놓아 주세요. 다른 PDF는 열고 난 뒤 \'PDF 끼워넣기\'로 추가할 수 있습니다.');
       const file = files[0];
       if (!isPdf(file)) throw new Error('PDF 파일을 선택하거나 끌어다 놓아 주세요.');
-      busy = true; $('editorStatus').textContent = 'PDF와 페이지 미리보기를 불러오는 중…';
-      let nextPreview;
+      busy = true; $('editorStatus').textContent = 'PDF를 불러오는 중…';
       try {
         requireLibraries();
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const nextSource = await PDFLib.PDFDocument.load(bytes);
-        nextPreview = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
-        const nextPages = [];
-        for (let i = 0; i < nextPreview.numPages; i++) {
-          const page = await nextPreview.getPage(i + 1); const view = page.getViewport({ scale: 1 });
-          const vp = page.getViewport({ scale: 180 / Math.max(view.width, view.height) }); const canvas = document.createElement('canvas'); canvas.width = vp.width; canvas.height = vp.height;
-          await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-          nextPages.push({ id: i, original: i, rotation: 0, items: [], thumb: canvas.toDataURL('image/jpeg', .7) });
-          $('editorStatus').textContent = `미리보기 준비 중 · ${i + 1}/${nextPreview.numPages}`;
-        }
-        if (preview) await preview.destroy();
-        source = nextSource; preview = nextPreview; pages = nextPages; renderedKey = ''; viewport = null;
-        active = 0; selected.clear(); anchor = null; undo = []; redo = []; imageData = null; dirty = false; imageCache.clear();
-        $('editImage').value = ''; $('editZoom').value = 'fit'; workspace.hidden = false; $('editorDrop').classList.add('has-document');
+        await PDFLib.PDFDocument.load(bytes); // validate before discarding the current document
+        resetDocument();
+        const src = await addSource(bytes, file.name);
+        pages = Array.from({ length: sources[src].doc.numPages }, (_, i) => newPage(src, i));
         $('editName').value = `${baseName(file.name)}_edited.pdf`;
-        setMode('pages'); setTool('select'); await refresh();
-        $('editorStatus').textContent = `${file.name} · ${pages.length}페이지 · 원본 파일은 변경되지 않습니다.`;
-      } catch (e) { if (nextPreview && nextPreview !== preview) await nextPreview.destroy(); throw new Error(`PDF를 열지 못했습니다. 암호가 있으면 잠금 해제 후 열어 주세요. ${e.message}`); }
+        await showDocument(file.name); persistSources(); scheduleAutosave();
+      } catch (e) { throw new Error(`PDF를 열지 못했습니다. 암호가 있으면 잠금 해제 후 열어 주세요. ${e.message}`); }
       finally { busy = false; }
     })();
   }
+
+  // ---------- insert pages ----------
+  function insertionIndex() {
+    const picked = pages.map((p, i) => selected.has(p.id) ? i : -1).filter(i => i >= 0);
+    return (picked.length ? Math.max(...picked) : active) + 1;
+  }
+  async function insertPages(newPages, at) {
+    remember(); pages.splice(at, 0, ...newPages); selected = new Set(newPages.map(p => p.id)); anchor = at; active = at; await refresh();
+  }
+  $('editInsertBlank').onclick = action(async () => {
+    const ref = current(), pg = await pdfPage(ref), vp = pg.getViewport({ scale: 1, rotation: pg.rotate });
+    const doc = await PDFLib.PDFDocument.create(); doc.addPage([vp.width, vp.height]);
+    const src = await addSource(new Uint8Array(await doc.save()), '빈 페이지', true);
+    await insertPages([newPage(src, 0)], insertionIndex()); persistSources();
+    notify('빈 페이지를 추가했습니다.');
+  });
+  $('editInsertPdf').onclick = () => { if (!locked()) $('editInsertInput').click(); };
+  $('editInsertInput').onchange = action(async () => {
+    const files = Array.from($('editInsertInput').files).filter(isPdf); $('editInsertInput').value = '';
+    if (!files.length) return;
+    busy = true;
+    try {
+      const added = [];
+      for (const file of files) {
+        let src;
+        try { src = await addSource(new Uint8Array(await file.arrayBuffer()), file.name); }
+        catch (e) { throw new Error(`${file.name}을(를) 열지 못했습니다. 암호가 걸린 PDF는 잠금 해제 후 추가하세요.`); }
+        for (let i = 0; i < sources[src].doc.numPages; i++) added.push(newPage(src, i));
+      }
+      busy = false; await insertPages(added, insertionIndex()); persistSources();
+      notify(`${files.length}개 PDF에서 ${added.length}페이지를 끼워 넣었습니다.`);
+    } finally { busy = false; }
+  });
+
+  // ---------- autosave (IndexedDB, this browser only) ----------
+  const DB_NAME = 'pdf-workbench-editor';
+  function idb(modeRW, fn) {
+    return new Promise((resolve, reject) => {
+      let req; try { req = indexedDB.open(DB_NAME, 1); } catch (e) { reject(e); return; }
+      req.onupgradeneeded = () => req.result.createObjectStore('session');
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        const db = req.result, tx = db.transaction('session', modeRW), store = tx.objectStore('session'); let result;
+        Promise.resolve(fn(store)).then(r => { result = r; });
+        tx.oncomplete = () => { db.close(); resolve(result); }; tx.onerror = () => { db.close(); reject(tx.error); };
+      };
+    });
+  }
+  const idbGet = key => idb('readonly', store => new Promise(r => { const q = store.get(key); q.onsuccess = () => r(q.result); q.onerror = () => r(undefined); }));
+  function persistSources() {
+    const data = sources.map(s => ({ name: s.name, blank: s.blank, bytes: s.bytes }));
+    idb('readwrite', store => { store.put(data, 'sources'); }).catch(() => {});
+  }
+  function scheduleAutosave() {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => {
+      if (!pages.length) return;
+      const state = { pages, active, name: $('editName').value, fileName: sources[0]?.name, dirty, savedAt: Date.now() };
+      idb('readwrite', store => { store.put(clone(state), 'state'); }).catch(() => {});
+    }, 800);
+  }
+  async function offerRestore() {
+    try {
+      const state = await idbGet('state'); if (!state?.dirty || pages.length) return;
+      const when = new Date(state.savedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      $('editRestoreText').textContent = `저장하지 않은 편집 작업이 있습니다 · ${state.fileName || 'PDF'} · ${when}`;
+      $('editRestore').hidden = false;
+    } catch { /* storage unavailable */ }
+  }
+  $('editRestoreYes').onclick = action(async () => {
+    const [state, saved] = [await idbGet('state'), await idbGet('sources')];
+    if (!state || !saved?.length) { $('editRestore').hidden = true; throw new Error('이전 작업을 찾지 못했습니다.'); }
+    busy = true;
+    try {
+      resetDocument();
+      for (const s of saved) await addSource(new Uint8Array(s.bytes), s.name, s.blank);
+      pages = state.pages; nextId = Math.max(...pages.map(p => p.id)) + 1; active = clamp(state.active || 0, 0, pages.length - 1);
+      $('editName').value = state.name || 'edited.pdf'; dirty = true;
+      await showDocument(state.fileName || 'PDF'); notify('이전 작업을 불러왔습니다.');
+    } finally { busy = false; }
+  });
+  $('editRestoreNo').onclick = () => { $('editRestore').hidden = true; idb('readwrite', store => { store.clear(); }).catch(() => {}); };
+  $('editName').addEventListener('change', scheduleAutosave);
   $('editorInput').onchange = () => { const files = Array.from($('editorInput').files); $('editorInput').value = ''; openFiles(files); };
   const drop = $('editorDrop');
   drop.onclick = () => { if (!locked()) $('editorInput').click(); };
@@ -581,7 +882,7 @@
       const o = P(0, 0), u = P(1, 0), rotate = PDFLib.degrees(Math.atan2(u[1] - o[1], u[0] - o[0]) * 180 / Math.PI);
       if (item.kind === 'text') {
         const off = baselineOffset(item.size);
-        lines(item).forEach((line, k) => { if (!line.trim()) return; const [x, y] = P(0, off + k * item.size * LINE); page.drawText(line, { x, y, size: item.size, font, color: hexRgb(item.color), rotate }); });
+        lines(item).forEach((line, k) => { if (!line.trim()) return; const [x, y] = P(0, off + k * item.size * LINE); page.drawText(line, { x, y, size: item.size, font, color: hexRgb(item.color), rotate, opacity: item.opacity ?? 1 }); });
         continue;
       }
       const [x, y] = P(0, item.h);
@@ -592,6 +893,11 @@
         page.drawRectangle({ x, y, width: item.w, height: item.h, rotate, color: item.kind === 'cover' ? PDFLib.rgb(1, 1, 1) : hexRgb(item.color), opacity: item.kind === 'highlight' ? 0.3 : 1, borderWidth: 0 });
       }
     }
+  }
+  function applyCrop(page, p, toPdf) {
+    if (!p.crop) return;
+    const [ax, ay] = toPdf(p.crop.x, p.crop.y), [bx, by] = toPdf(p.crop.x + p.crop.w, p.crop.y + p.crop.h);
+    page.setCropBox(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay));
   }
   async function save(onlySelected, separate = false) {
     if (onlySelected) requireSelection();
@@ -609,8 +915,8 @@
       }
       let redacted = 0;
       for (const p of chosen) {
-        const rotation = (source.getPage(p.original).getRotation().angle + p.rotation) % 360;
-        const pg = await preview.getPage(p.original + 1); const vp = pg.getViewport({ scale: 1, rotation });
+        const rotation = (sources[p.src].lib.getPage(p.original).getRotation().angle + p.rotation) % 360;
+        const pg = await pdfPage(p); const vp = pg.getViewport({ scale: 1, rotation });
         const lastRedaction = p.items.findLastIndex(it => it.kind === 'cover' && it.redact);
         if (lastRedaction >= 0) {
           // Permanent removal: the page is re-rendered as an image with the areas painted out, so the original text no longer exists.
@@ -625,10 +931,11 @@
           const img = await output.embedJpg(canvas.toDataURL('image/jpeg', .92));
           const page = output.addPage([vp.width, vp.height]); page.drawImage(img, { x: 0, y: 0, width: vp.width, height: vp.height });
           await drawVector(output, page, p.items.slice(lastRedaction + 1), (x, y) => [x, vp.height - y], font, images);
-          redacted++;
+          applyCrop(page, p, (x, y) => [x, vp.height - y]); redacted++;
         } else {
-          const [page] = await output.copyPages(source, [p.original]); page.setRotation(PDFLib.degrees(rotation)); output.addPage(page);
+          const [page] = await output.copyPages(sources[p.src].lib, [p.original]); page.setRotation(PDFLib.degrees(rotation)); output.addPage(page);
           if (p.items.length) await drawVector(output, page, p.items, (x, y) => vp.convertToPdfPoint(x, y), font, images);
+          applyCrop(page, p, (x, y) => vp.convertToPdfPoint(x, y));
         }
       }
       const name = baseName($('editName').value) || 'edited';
@@ -642,7 +949,7 @@
         downloadBlob(await zip.generateAsync({ type: 'blob' }), `${name}_pages.zip`);
       } else {
         downloadBlob(new Blob([await output.save()], { type: 'application/pdf' }), normalizePdfName(onlySelected ? `${name}_extracted.pdf` : $('editName').value || 'edited.pdf'));
-        if (!onlySelected) dirty = false;
+        if (!onlySelected) { dirty = false; scheduleAutosave(); }
       }
       notify(`${chosen.length}페이지 ${separate ? 'ZIP' : onlySelected ? '추출본' : '편집본'} 저장 완료${redacted ? ` · ${redacted}페이지는 영구 삭제를 위해 이미지로 저장됨` : ''}. 원본 파일은 변경되지 않습니다.`);
     } finally { busy = false; }
@@ -650,5 +957,5 @@
   $('editZip').onclick = action(() => save(true, true));
   $('editSave').onclick = action(() => save(false)); $('editExtract').onclick = action(() => save(true));
   $('editName').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('editSave').click(); } };
-  setMode('pages'); selectionSettings();
+  setMode('pages'); selectionSettings(); offerRestore();
 })();

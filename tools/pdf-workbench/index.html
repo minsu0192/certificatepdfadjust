@@ -36,6 +36,7 @@
       <section class="tab-panel is-active" data-panel="editor">
         <div class="editor-heading"><div><h2>편집 · 페이지 관리</h2><p>순서를 바꾸고 필요한 페이지만 추출하세요. 텍스트와 서명도 추가할 수 있습니다.</p></div><button class="btn btn--secondary" type="button" data-pick="editorInput">PDF 열기</button></div>
         <input id="editorInput" type="file" accept=".pdf,application/pdf" hidden>
+        <div id="editRestore" class="restore-banner" role="status" hidden><span id="editRestoreText"></span><button type="button" id="editRestoreYes" class="btn btn--primary">이어서 하기</button><button type="button" id="editRestoreNo" class="btn btn--secondary">버리기</button></div>
         <div id="editorDrop" class="drop-zone editor-drop" role="button" tabindex="0" aria-label="편집할 PDF 파일 선택 또는 드래그앤드롭">
           <div class="drop-zone__icon">PDF</div>
           <p class="drop-zone__primary">PDF를 여기에 끌어다 놓으세요</p>
@@ -55,6 +56,8 @@
               <div class="page-tools">
                 <div class="range-select"><input id="editRange" placeholder="페이지 범위 (예: 1-3,5)" aria-label="선택할 페이지 범위 (현재 순서)"><button type="button" id="editSelect" class="btn btn--secondary">범위 선택</button><button type="button" id="editAll" class="btn btn--secondary">전체 선택</button><button type="button" id="editNone" class="btn btn--secondary">선택 해제</button></div>
                 <div class="order-tools"><span>전체 순서</span><button type="button" id="editReverse" class="btn btn--secondary">뒤집기</button><button type="button" id="editOriginal" class="btn btn--secondary">원본 순서로</button></div>
+                <div class="order-tools"><span>추가</span><button type="button" id="editInsertBlank" class="btn btn--secondary" title="선택한 페이지(또는 현재 페이지) 뒤에 추가">＋ 빈 페이지</button><button type="button" id="editInsertPdf" class="btn btn--secondary" title="선택한 페이지(또는 현재 페이지) 뒤에 다른 PDF의 페이지를 추가">＋ PDF 끼워넣기</button><input id="editInsertInput" type="file" accept=".pdf,application/pdf" multiple hidden></div>
+                <div class="order-tools"><span>일괄 넣기</span><button type="button" id="editPageNumbers" class="btn btn--secondary">페이지 번호</button><button type="button" id="editWatermark" class="btn btn--secondary">워터마크</button></div>
               </div>
               <div id="editBulk" class="bulk-bar" hidden>
                 <strong id="editCount" role="status"></strong>
@@ -71,7 +74,8 @@
                 <button type="button" data-tool="text" aria-pressed="false" title="텍스트 추가 (T)"><span aria-hidden="true">T</span>텍스트<kbd>T</kbd></button>
                 <button type="button" data-tool="cover" aria-pressed="false" title="흰색으로 가리기 (E)"><span aria-hidden="true">▭</span>가리기<kbd>E</kbd></button>
                 <button type="button" data-tool="highlight" aria-pressed="false" title="형광펜 (H)"><span aria-hidden="true">▤</span>형광펜<kbd>H</kbd></button>
-                <button type="button" data-tool="image" aria-pressed="false" title="이미지 · 서명 · 도장 (I)"><span aria-hidden="true">▣</span>이미지<kbd>I</kbd></button>
+                <button type="button" data-tool="image" aria-pressed="false" title="이미지 · 서명 · 도장 (I)"><span aria-hidden="true">▣</span>서명·이미지<kbd>I</kbd></button>
+                <button type="button" data-tool="crop" aria-pressed="false" title="페이지 자르기 (C)"><span aria-hidden="true">⌗</span>자르기<kbd>C</kbd></button>
                 <input type="hidden" id="editTool" value="select">
               </div>
               <div class="edit-controls">
@@ -81,9 +85,14 @@
                 <label class="field field--compact" id="editColorField">색상<input id="editColor" type="color" value="#263a68"></label>
                 <label class="field field--compact" id="editWidthField">너비 (pt)<input id="editObjectWidth" type="number" min="3" step="1"></label>
                 <label class="redact-field" id="editRedactField"><input id="editRedact" type="checkbox"><span><b>영구 삭제</b><small>원래 글자까지 지웁니다 (이 페이지는 이미지로 저장)</small></span></label>
-                <label class="field" id="editImageField">이미지 파일<input id="editImage" type="file" accept="image/png,image/jpeg"></label>
-                <div id="editSelection" class="selection-actions" hidden><button type="button" id="editDuplicate" class="btn btn--secondary" title="복제 (Ctrl+D)">복제</button><button type="button" id="editRemove" class="btn btn--secondary btn--danger" title="삭제 (Delete)">삭제</button></div>
+                <div class="field image-field" id="editImageField"><span>서명 · 도장 · 이미지</span>
+                  <div class="image-actions"><button type="button" id="editSignDraw" class="btn btn--secondary">✍ 서명 그리기</button><label class="btn btn--secondary file-btn">이미지 파일<input id="editImage" type="file" accept="image/png,image/jpeg" hidden></label></div>
+                  <div id="editStamps" class="stamp-list" aria-label="저장된 서명·도장 (이 브라우저에만 저장)"></div>
+                </div>
+                <div id="editCropField" class="crop-actions"><button type="button" id="editCropAll" class="btn btn--secondary">모든 페이지에 같게</button><button type="button" id="editCropClear" class="btn btn--secondary">자르기 해제</button></div>
+                <div id="editSelection" class="selection-actions" hidden><button type="button" id="editCopyPages" class="btn btn--secondary" title="같은 위치로 다른 페이지에 복사">여러 페이지에 복사</button><button type="button" id="editDuplicate" class="btn btn--secondary" title="복제 (Ctrl+D)">복제</button><button type="button" id="editRemove" class="btn btn--secondary btn--danger" title="삭제 (Delete)">삭제</button></div>
               </div>
+              <div id="editCopyForm" class="copy-form" hidden><span>같은 위치에 복사할 페이지</span><input id="editCopyRange" placeholder="비우면 모든 페이지 · 예: 2-5,8" aria-label="복사할 페이지 범위"><button type="button" id="editCopyApply" class="btn btn--primary">복사</button><button type="button" id="editCopyCancel" class="btn btn--secondary">닫기</button></div>
               <div class="preview-toolbar"><div><button type="button" id="editPrev" class="btn btn--secondary" aria-label="이전 페이지" title="이전 페이지 (PageUp)">←</button><label class="page-jump">페이지 <select id="editPageJump" aria-label="편집할 페이지"></select></label><button type="button" id="editNext" class="btn btn--secondary" aria-label="다음 페이지" title="다음 페이지 (PageDown)">→</button></div><p id="editHelp" class="editor-hint"></p><label class="zoom-field">보기 <select id="editZoom"><option value="fit">페이지 맞춤</option><option value="100">너비 맞춤</option><option value="150">150%</option><option value="200">200%</option></select></label></div>
               <div class="preview-scroll"><div id="editStage"><canvas id="editBase"></canvas><canvas id="editOverlay" tabindex="0" aria-label="PDF 편집 미리보기. 추가 항목을 선택하고 드래그하거나 방향키로 이동할 수 있습니다."></canvas></div></div>
               <p class="note">추가한 텍스트는 실제 글자로 저장되어 검색·복사할 수 있습니다(한글 포함). <b>원문 수정</b>은 원래 글자를 흰색으로 덮고 새 글자를 올리는 방식이라, 덮인 원래 글자는 파일 안에 남아 있습니다. 금액·개인정보처럼 남으면 안 되는 내용은 <b>가리기 → 영구 삭제</b>를 사용하세요. 해당 페이지는 이미지로 저장되어 원래 글자가 완전히 사라집니다.</p>
@@ -91,14 +100,41 @@
           </div>
         </div>
       </section>
+      <dialog id="signDialog" class="editor-dialog" aria-labelledby="signTitle">
+        <h3 id="signTitle">서명 그리기</h3><p>마우스나 손가락으로 서명하세요. 저장한 서명은 이 브라우저에서 다시 쓸 수 있습니다.</p>
+        <canvas id="signPad" width="1040" height="400" aria-label="서명 입력 영역"></canvas>
+        <div class="dialog-row"><div class="pen-colors" role="radiogroup" aria-label="펜 색상"><label><input type="radio" name="signColor" value="#111111" checked><span style="--c:#111111">검정</span></label><label><input type="radio" name="signColor" value="#1f3fb4"><span style="--c:#1f3fb4">파랑</span></label><label><input type="radio" name="signColor" value="#c0392b"><span style="--c:#c0392b">빨강</span></label></div><button type="button" id="signClear" class="btn btn--secondary">지우기</button></div>
+        <p id="signError" class="dialog-error" hidden>서명을 먼저 그려 주세요.</p>
+        <div class="dialog-actions"><button type="button" id="signCancel" class="btn btn--secondary">취소</button><button type="button" id="signUse" class="btn btn--primary">사용하기</button></div>
+      </dialog>
+      <dialog id="batchDialog" class="editor-dialog" aria-labelledby="batchTitle">
+        <h3 id="batchTitle">페이지 번호</h3><p id="batchIntro"></p>
+        <div id="batchNumberFields" class="dialog-grid">
+          <label class="field">위치<select id="numPosition"><option value="bc">아래 가운데</option><option value="br">아래 오른쪽</option><option value="bl">아래 왼쪽</option><option value="tc">위 가운데</option><option value="tr">위 오른쪽</option></select></label>
+          <label class="field">형식<select id="numFormat"><option value="{n}">1</option><option value="{n} / {total}">1 / 10</option><option value="- {n} -">- 1 -</option><option value="Page {n}">Page 1</option><option value="{n}페이지">1페이지</option></select></label>
+          <label class="field">시작 번호<input id="numStart" type="number" min="0" value="1"></label>
+          <label class="field">크기 (pt)<input id="numSize" type="number" min="6" max="48" value="10"></label>
+          <label class="field">색상<input id="numColor" type="color" value="#333333"></label>
+          <label class="check-field"><input id="numSkipFirst" type="checkbox"> 첫 페이지(표지)는 빼기</label>
+        </div>
+        <div id="batchWatermarkFields" class="dialog-grid">
+          <label class="field wide">문구<input id="wmText" value="대외비"></label>
+          <label class="field">크기 (pt)<input id="wmSize" type="number" min="12" max="200" value="72"></label>
+          <label class="field">색상<input id="wmColor" type="color" value="#c0392b"></label>
+          <label class="field">투명도 <span id="wmOpacityValue">20%</span><input id="wmOpacity" type="range" min="5" max="70" value="20"></label>
+          <label class="field">방향<select id="wmAngle"><option value="-45">대각선</option><option value="0">가로</option></select></label>
+        </div>
+        <label class="field">적용할 페이지<select id="batchTarget"><option value="all">모든 페이지</option><option value="selected">선택한 페이지</option></select></label>
+        <div class="dialog-actions"><button type="button" id="batchRemove" class="btn btn--secondary btn--danger">기존 것 지우기</button><span class="spacer"></span><button type="button" id="batchCancel" class="btn btn--secondary">취소</button><button type="button" id="batchApply" class="btn btn--primary">넣기</button></div>
+      </dialog>
       <section class="tab-panel" data-panel="merge">
         <div class="panel-heading"><h2>PDF 합치기</h2><p>파일을 추가하고 순서를 정하면 하나의 문서가 됩니다.</p></div>
         <div class="panel-grid">
           <div class="drop-zone" data-drop="merge">
             <input id="mergeInput" type="file" accept="application/pdf,.pdf" multiple hidden>
             <div class="drop-zone__icon">PDF</div>
-            <p class="drop-zone__primary">합칠 PDF 여러 개를 선택하세요</p>
-            <p class="drop-zone__secondary">선택한 순서대로 하나의 PDF로 저장합니다.</p>
+            <p class="drop-zone__primary">합칠 PDF를 추가하세요</p>
+            <p class="drop-zone__secondary">한 개씩 또는 여러 개를 한 번에 넣을 수 있고, 계속 추가됩니다. 목록에서 끌거나 ↑↓로 순서를 바꾸세요.</p>
             <button class="btn btn--secondary" type="button" data-pick="mergeInput">파일 선택</button>
           </div>
           <div class="settings-card">

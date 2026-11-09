@@ -95,35 +95,83 @@ function setupDrop(type, inputId, multiple) {
 function setFiles(type, files, multiple) {
   if (document.getElementById('unlockRun').disabled) return;
   if (type === 'unlock') document.getElementById('unlockPassword').value = '';
-  const pdfs = files.filter(file => type === 'image' ? isImageFile(file) : isPdf(file));
-  state[type] = multiple ? pdfs : pdfs.slice(0, 1);
+  const accepted = files.filter(file => type === 'image' ? isImageFile(file) : isPdf(file));
+  const input = document.querySelector(`[data-drop="${type}"] input[type=file]`) || document.getElementById(`${type}Input`);
+  if (input) input.value = ''; // allow picking the same file again
+  if (!multiple) state[type] = accepted.slice(0, 1);
+  else {
+    // Files are added to the list (one at a time or many at once); exact duplicates are skipped.
+    const key = file => `${file.name}|${file.size}|${file.lastModified}`;
+    const seen = new Set(state[type].map(key));
+    const added = accepted.filter(file => !seen.has(key(file)) && seen.add(key(file)));
+    state[type] = [...state[type], ...added];
+    if (accepted.length && !added.length) { renderFileList(type); showResult('이미 추가된 파일', '같은 파일은 한 번만 추가됩니다.'); return; }
+  }
   renderFileList(type);
   hideResult();
+}
+
+const pageCounts = new WeakMap();
+async function countPages(file) {
+  if (pageCounts.has(file)) return pageCounts.get(file);
+  const promise = (async () => {
+    try { const doc = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise; const n = doc.numPages; doc.destroy(); return n; }
+    catch { return null; }
+  })();
+  pageCounts.set(file, promise); return promise;
 }
 
 function renderFileList(type) {
   const list = document.getElementById(`${type}List`);
   const files = state[type];
   list.innerHTML = '';
+  if (files.length) {
+    const head = document.createElement('li'); head.className = 'file-list__head';
+    const summary = document.createElement('b'); summary.textContent = `${files.length}개 파일`;
+    const actions = document.createElement('span');
+    if (type === 'merge' && files.length > 1) {
+      const sort = document.createElement('button'); sort.className = 'btn btn--secondary'; sort.type = 'button'; sort.textContent = '이름순 정렬';
+      sort.onclick = () => { state.merge.sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true })); renderFileList('merge'); };
+      actions.appendChild(sort);
+    }
+    const clear = document.createElement('button'); clear.className = 'btn btn--secondary'; clear.type = 'button'; clear.textContent = '모두 지우기';
+    clear.onclick = () => { state[type] = []; renderFileList(type); hideResult(); };
+    actions.appendChild(clear); head.append(summary, actions); list.appendChild(head);
+    if (type === 'merge' && window.pdfjsLib) Promise.all(files.map(countPages)).then(counts => {
+      if (state.merge !== files && state.merge.length !== files.length) return;
+      const total = counts.reduce((sum, n) => sum + (n || 0), 0); summary.textContent = `${files.length}개 파일 · 총 ${total}페이지`;
+    });
+  }
   files.forEach((file, index) => {
     const li = document.createElement('li');
-    li.innerHTML = `<b>${index + 1}. ${escapeHtml(file.name)}</b><span>${formatBytes(file.size)}</span>`;
+    li.innerHTML = `<b>${index + 1}. ${escapeHtml(file.name)}</b><span class="file-meta">${formatBytes(file.size)}</span>`;
+    if (type === 'merge' && window.pdfjsLib) countPages(file).then(n => { if (n) li.querySelector('.file-meta').textContent = `${n}페이지 · ${formatBytes(file.size)}`; });
+    const controls = document.createElement('span');
+    const buttons = type === 'merge' ? [['↑', -1], ['↓', 1], ['제거', 0]] : [['제거', 0]];
+    for (const [label, delta] of buttons) {
+      const button = document.createElement('button');
+      button.className = 'btn btn--secondary'; button.textContent = label; button.type = 'button';
+      button.setAttribute('aria-label', `${file.name} ${label}`);
+      button.disabled = delta !== 0 && (index + delta < 0 || index + delta >= files.length);
+      button.onclick = () => {
+        if (!delta) state[type].splice(index, 1);
+        else [state[type][index], state[type][index + delta]] = [state[type][index + delta], state[type][index]];
+        renderFileList(type);
+      };
+      controls.appendChild(button);
+    }
+    li.appendChild(controls);
     if (type === 'merge') {
-      const controls = document.createElement('span');
-      for (const [label, delta] of [['↑', -1], ['↓', 1], ['제거', 0]]) {
-        const button = document.createElement('button');
-        button.className = 'btn btn--secondary'; button.textContent = label;
-        button.setAttribute('aria-label', `${file.name} ${label}`);
-        button.onclick = () => {
-          if (!delta) state.merge.splice(index, 1);
-          else if (index + delta >= 0 && index + delta < state.merge.length) {
-            [state.merge[index], state.merge[index + delta]] = [state.merge[index + delta], state.merge[index]];
-          }
-          renderFileList('merge');
-        };
-        controls.appendChild(button);
-      }
-      li.appendChild(controls);
+      li.draggable = true; li.classList.add('is-draggable');
+      li.ondragstart = e => { e.dataTransfer.setData('text/x-merge-index', String(index)); e.dataTransfer.effectAllowed = 'move'; li.classList.add('is-dragging'); };
+      li.ondragend = () => li.classList.remove('is-dragging');
+      li.ondragover = e => { if (e.dataTransfer.types.includes('text/x-merge-index')) { e.preventDefault(); li.classList.add('drop-target'); } };
+      li.ondragleave = () => li.classList.remove('drop-target');
+      li.ondrop = e => {
+        const from = Number(e.dataTransfer.getData('text/x-merge-index')); li.classList.remove('drop-target');
+        if (!Number.isInteger(from) || from === index) return; e.preventDefault();
+        const [moved] = state.merge.splice(from, 1); state.merge.splice(index, 0, moved); renderFileList('merge');
+      };
     }
     list.appendChild(li);
   });
