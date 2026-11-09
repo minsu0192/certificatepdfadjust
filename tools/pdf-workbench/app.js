@@ -10,7 +10,7 @@ const els = {
 
 const state = {
   merge: [],
-  split: [],
+  image: [],
   jpg: [],
   compress: [],
   unlock: []
@@ -26,9 +26,10 @@ if (window.pdfjsLib) {
 
 document.querySelectorAll('.tab-button').forEach(button => {
   button.addEventListener('click', () => {
-    document.querySelectorAll('.tab-button').forEach(tab => tab.classList.remove('is-active'));
+    document.querySelectorAll('.tab-button').forEach(tab => { tab.classList.remove('is-active'); tab.setAttribute('aria-pressed', 'false'); });
     document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('is-active'));
     button.classList.add('is-active');
+    button.setAttribute('aria-pressed', 'true');
     document.querySelector(`[data-panel="${button.dataset.tab}"]`).classList.add('is-active');
     hideResult();
   });
@@ -42,7 +43,7 @@ document.querySelectorAll('[data-pick]').forEach(button => {
 });
 
 setupDrop('merge', 'mergeInput', true);
-setupDrop('split', 'splitInput', false);
+setupDrop('image', 'imageInput', true);
 setupDrop('jpg', 'jpgInput', true);
 setupDrop('compress', 'compressInput', true);
 setupDrop('unlock', 'unlockInput', true);
@@ -56,7 +57,6 @@ document.getElementById('compressQuality').addEventListener('input', event => {
 });
 
 document.getElementById('mergeRun').addEventListener('click', () => handle(runMerge));
-document.getElementById('splitRun').addEventListener('click', () => handle(runSplit));
 document.getElementById('jpgRun').addEventListener('click', () => handle(runJpg));
 document.getElementById('compressRun').addEventListener('click', () => handle(runCompress));
 
@@ -66,6 +66,9 @@ function setupDrop(type, inputId, multiple) {
   const zone = document.querySelector(`[data-drop="${type}"]`);
   const input = document.getElementById(inputId);
 
+  zone.tabIndex = 0; zone.setAttribute('role', 'button');
+  zone.setAttribute('aria-label', type === 'image' ? '이미지 파일 선택' : 'PDF 파일 선택');
+  zone.addEventListener('keydown', event => { if (event.target === zone && ['Enter', ' '].includes(event.key)) { event.preventDefault(); input.click(); } });
   zone.addEventListener('click', () => input.click());
   input.addEventListener('change', () => setFiles(type, Array.from(input.files || []), multiple));
 
@@ -84,7 +87,7 @@ function setupDrop(type, inputId, multiple) {
   });
 
   zone.addEventListener('drop', event => {
-    const files = Array.from(event.dataTransfer.files || []).filter(file => isPdf(file));
+    const files = Array.from(event.dataTransfer.files || []).filter(file => type === 'image' ? isImageFile(file) : isPdf(file));
     setFiles(type, files, multiple);
   });
 }
@@ -92,7 +95,7 @@ function setupDrop(type, inputId, multiple) {
 function setFiles(type, files, multiple) {
   if (document.getElementById('unlockRun').disabled) return;
   if (type === 'unlock') document.getElementById('unlockPassword').value = '';
-  const pdfs = files.filter(file => isPdf(file));
+  const pdfs = files.filter(file => type === 'image' ? isImageFile(file) : isPdf(file));
   state[type] = multiple ? pdfs : pdfs.slice(0, 1);
   renderFileList(type);
   hideResult();
@@ -154,69 +157,33 @@ async function runMerge() {
   });
 }
 
-async function runSplit() {
-  requireLibraries();
-  const file = state.split[0];
-  if (!file) throwUserError('분리할 PDF 파일을 선택하세요.');
-
-  await withBusy('PDF를 분리하는 중...', async update => {
-    const sourcePdf = await PDFLib.PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true });
-    const pages = parsePageRange(document.getElementById('splitRange').value, sourcePdf.getPageCount());
-    if (!pages.length) throwUserError('분리할 페이지 범위를 확인하세요.');
-
-    const base = baseName(file.name);
-    const makeSingleZip = document.getElementById('splitSingleZip').checked;
-
-    if (!makeSingleZip) {
-      const pdf = await PDFLib.PDFDocument.create();
-      const copied = await pdf.copyPages(sourcePdf, pages.map(page => page - 1));
-      copied.forEach(page => pdf.addPage(page));
-      const bytes = await pdf.save({ useObjectStreams: true });
-      downloadBlob(new Blob([bytes], { type: 'application/pdf' }), `${base}_extracted.pdf`);
-    } else {
-      const zip = new JSZip();
-      for (let i = 0; i < pages.length; i += 1) {
-        const pdf = await PDFLib.PDFDocument.create();
-        const [page] = await pdf.copyPages(sourcePdf, [pages[i] - 1]);
-        pdf.addPage(page);
-        const bytes = await pdf.save({ useObjectStreams: true });
-        zip.file(`${base}_p${String(pages[i]).padStart(3, '0')}.pdf`, bytes);
-        update(((i + 1) / pages.length) * 100, `${i + 1}/${pages.length} 페이지 분리 완료`);
-      }
-      const blob = await zip.generateAsync({ type: 'blob' });
-      downloadBlob(blob, `${base}_split.zip`);
-    }
-
-    showResult('PDF 분리 완료', `${pages.length}개 페이지를 분리했습니다.`);
-  });
-}
-
 async function runJpg() {
   requireLibraries();
-  const files = state.jpg;
-  if (!files.length) throwUserError('JPG로 변환할 PDF 파일을 선택하세요.');
-
-  await withBusy('JPG로 변환하는 중...', async update => {
-    const zip = new JSZip();
-    const quality = Number(document.getElementById('jpgQuality').value) / 100;
-    const scale = Number(document.getElementById('jpgScale').value);
-    let done = 0;
-    let total = 0;
-
-    for (const file of files) {
-      const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-      total += pdf.numPages;
-      for (let pageNo = 1; pageNo <= pdf.numPages; pageNo += 1) {
-        const blob = await renderPageAsJpg(pdf, pageNo, scale, quality);
-        zip.file(`${baseName(file.name)}_p${String(pageNo).padStart(3, '0')}.jpg`, blob);
-        done += 1;
-        update(total ? (done / total) * 100 : 5, `${done}개 페이지 변환 완료`);
-      }
+  const files = [...state.jpg];
+  if (!files.length) throwUserError('이미지로 변환할 PDF를 선택하세요.');
+  const format = document.getElementById('pdfImageFormat').value;
+  const extension = format === 'jpeg' ? 'jpg' : 'png';
+  const range = document.getElementById('pdfImageRange').value;
+  const quality = Number(document.getElementById('jpgQuality').value) / 100;
+  const scale = Number(document.getElementById('jpgScale').value);
+  await withBusy('PDF를 이미지로 변환하는 중...', async update => {
+    const zip = new JSZip(); let done = 0; let single;
+    for (let i = 0; i < files.length; i++) {
+      const pdf = await pdfjsLib.getDocument({ data: await files[i].arrayBuffer() }).promise;
+      try {
+        const pageNumbers = parsePageRange(range, pdf.numPages);
+        for (let j = 0; j < pageNumbers.length; j++) {
+          const pageNo = pageNumbers[j];
+          const blob = await renderPageAsJpg(pdf, pageNo, scale, quality, `image/${format}`);
+          const name = `${files.length > 1 ? String(i + 1).padStart(3, '0') + '_' : ''}${baseName(files[i].name)}_p${String(pageNo).padStart(3, '0')}.${extension}`;
+          zip.file(name, blob); single = { name, blob }; done++;
+          update((i + (j + 1) / pageNumbers.length) / files.length * 100, `${i + 1}/${files.length} 파일 · ${j + 1}/${pageNumbers.length} 페이지`);
+        }
+      } finally { await pdf.destroy(); }
     }
-
-    const blob = await zip.generateAsync({ type: 'blob' });
-    downloadBlob(blob, `pdf_to_jpg_${Date.now()}.zip`);
-    showResult('JPG 변환 완료', `${done}개 페이지를 JPG 이미지로 저장했습니다.`);
+    if (done === 1) downloadBlob(single.blob, single.name);
+    else downloadBlob(await zip.generateAsync({ type: 'blob' }), `pdf_to_${extension}.zip`);
+    showResult('이미지 변환 완료', `${done}개 페이지를 ${extension.toUpperCase()}로 저장했습니다.`);
   });
 }
 
@@ -288,7 +255,7 @@ async function rasterCompressPdf(file, quality, scale, onPage) {
   return bytes.length < file.size ? bytes : new Uint8Array(await file.arrayBuffer());
 }
 
-async function renderPageAsJpg(pdf, pageNo, scale, quality) {
+async function renderPageAsJpg(pdf, pageNo, scale, quality, mime = 'image/jpeg') {
   const page = await pdf.getPage(pageNo);
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement('canvas');
@@ -298,7 +265,7 @@ async function renderPageAsJpg(pdf, pageNo, scale, quality) {
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvasContext: context, viewport }).promise;
-  return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+  return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('이미지 생성에 실패했습니다. 해상도를 낮춰 주세요.')), mime, quality));
 }
 
 function parsePageRange(value, pageCount) {

@@ -72,8 +72,11 @@
     if (to < 0 || to >= pages.length || from === to) return;
     remember(); const id = current().id; const [p] = pages.splice(from, 1); pages.splice(to, 0, p); active = pages.findIndex(p => p.id === id); await refresh();
   }
-  $('editorInput').onchange = action(async () => {
-    const file = $('editorInput').files[0]; $('editorInput').value = ''; if (!file) return;
+  function openFiles(files) { return action(async () => {
+    if (!files.length) return;
+    if (files.length !== 1) throw new Error('편집할 PDF 한 개만 놓아 주세요. 여러 파일은 PDF 합치기 탭에서 합칠 수 있습니다.');
+    const file = files[0];
+    if (!isPdf(file)) throw new Error('PDF 파일을 선택하거나 끌어다 놓아 주세요.');
     busy = true; $('editorStatus').textContent = 'PDF와 페이지 미리보기를 불러오는 중…';
     let nextPreview;
     try {
@@ -91,10 +94,34 @@
       }
       if (preview) await preview.destroy(); source = nextSource; preview = nextPreview; pages = nextPages;
       active = 0; selected.clear(); undo = []; redo = []; imageData = null;
-      $('editorWorkspace').hidden = false; $('editName').value = `${baseName(file.name)}_edited.pdf`;
+      $('editorWorkspace').hidden = false; $('editorDrop').classList.add('has-document'); $('editName').value = `${baseName(file.name)}_edited.pdf`;
       await refresh(); $('editorStatus').textContent = `${file.name} · ${pages.length}페이지 · 변경한 내용은 저장 버튼을 눌러 다운로드하세요.`;
     } catch (e) { if (nextPreview && nextPreview !== preview) await nextPreview.destroy(); throw new Error(`PDF를 열지 못했습니다. 암호가 있으면 잠금 해제 후 열어 주세요. ${e.message}`); }
     finally { busy = false; }
+  })(); }
+  $('editorInput').onchange = () => {
+    const files = Array.from($('editorInput').files); $('editorInput').value = ''; openFiles(files);
+  };
+  const drop = $('editorDrop');
+  const panel = document.querySelector('[data-panel="editor"]');
+  drop.onclick = () => { if (!busy && !rendering && !working) $('editorInput').click(); };
+  drop.onkeydown = event => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); drop.click(); }
+  };
+  const isFileDrag = event => Array.from(event.dataTransfer?.types || []).includes('Files');
+  for (const name of ['dragenter', 'dragover']) panel.addEventListener(name, event => {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = busy || rendering || working ? 'none' : 'copy';
+    if (!busy && !rendering && !working) drop.classList.add('is-hover');
+  });
+  panel.addEventListener('dragleave', event => {
+    if (!panel.contains(event.relatedTarget)) drop.classList.remove('is-hover');
+  });
+  panel.addEventListener('drop', event => {
+    if (!isFileDrag(event)) return;
+    event.preventDefault(); drop.classList.remove('is-hover');
+    openFiles(Array.from(event.dataTransfer.files));
   });
   $('editUndo').onclick = action(() => restore(undo, redo)); $('editRedo').onclick = action(() => restore(redo, undo));
   $('editSelect').onclick = action(() => { selected = new Set(parsePageRange($('editRange').value, pages.length).map(n => pages[n - 1].id)); return refresh(); });
@@ -155,7 +182,7 @@
       remember(); current().items.push(item); await paint($('editOverlay'), current().items, 1.5);
     })();
   };
-  async function save(onlySelected) {
+  async function save(onlySelected, separate = false) {
     if (onlySelected) requireSelection();
     busy = true; $('editorStatus').textContent = 'PDF를 저장하는 중…';
     try {
@@ -170,9 +197,21 @@
           page.drawImage(img, { x, y, width: vp.width, height: vp.height, rotate: PDFLib.degrees(rotation) });
         }
       }
+      if (separate) {
+        const zip = new JSZip();
+        for (let i = 0; i < output.getPageCount(); i++) {
+          const part = await PDFLib.PDFDocument.create();
+          const [page] = await part.copyPages(output, [i]); part.addPage(page);
+          const position = pages.findIndex(p => p.id === chosen[i].id) + 1;
+          zip.file(`${baseName($('editName').value)}_p${String(position).padStart(3, '0')}.pdf`, await part.save());
+        }
+        downloadBlob(await zip.generateAsync({ type: 'blob' }), `${baseName($('editName').value)}_pages.zip`);
+      } else {
       downloadBlob(new Blob([await output.save()], { type: 'application/pdf' }), normalizePdfName(onlySelected ? `${baseName($('editName').value)}_extracted.pdf` : $('editName').value));
+      }
       $('editorStatus').textContent = `${chosen.length}페이지 ${onlySelected ? '추출' : '편집본'} 저장 완료. 원본 파일은 변경되지 않습니다.`;
     } finally { busy = false; }
   }
+  $('editZip').onclick = action(() => save(true, true));
   $('editSave').onclick = action(() => save(false)); $('editExtract').onclick = action(() => save(true));
 })();
