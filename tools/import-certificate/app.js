@@ -270,7 +270,7 @@ async function parsePdf(file) {
 
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
+    const content = await (window.ToolOcr ? ToolOcr.pageContent(page) : page.getTextContent()); // scanned pages fall back to OCR
 
     // Y좌표 기준으로 줄을 복원 (UNI-PASS 표 레이아웃에 최적)
     const lineMap = new Map();

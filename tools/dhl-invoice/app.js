@@ -103,7 +103,7 @@ async function parsePdfAttachment(content) {
   const pdf = await pdfjsLib.getDocument({ data }).promise;
   let fullText = '';
   for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
-    const page = await pdf.getPage(pageNo), pageContent = await page.getTextContent(), lineMap = new Map();
+    const page = await pdf.getPage(pageNo), pageContent = await (window.ToolOcr ? ToolOcr.pageContent(page) : page.getTextContent()), lineMap = new Map();
     for (const item of pageContent.items) {
       const y = Math.round(item.transform[5] / 3) * 3;
       if (!lineMap.has(y)) lineMap.set(y, []);
