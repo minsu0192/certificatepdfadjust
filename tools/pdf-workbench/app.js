@@ -105,6 +105,23 @@ function renderFileList(type) {
   files.forEach((file, index) => {
     const li = document.createElement('li');
     li.innerHTML = `<b>${index + 1}. ${escapeHtml(file.name)}</b><span>${formatBytes(file.size)}</span>`;
+    if (type === 'merge') {
+      const controls = document.createElement('span');
+      for (const [label, delta] of [['↑', -1], ['↓', 1], ['제거', 0]]) {
+        const button = document.createElement('button');
+        button.className = 'btn btn--secondary'; button.textContent = label;
+        button.setAttribute('aria-label', `${file.name} ${label}`);
+        button.onclick = () => {
+          if (!delta) state.merge.splice(index, 1);
+          else if (index + delta >= 0 && index + delta < state.merge.length) {
+            [state.merge[index], state.merge[index + delta]] = [state.merge[index + delta], state.merge[index]];
+          }
+          renderFileList('merge');
+        };
+        controls.appendChild(button);
+      }
+      li.appendChild(controls);
+    }
     list.appendChild(li);
   });
 }
@@ -150,12 +167,12 @@ async function runSplit() {
     const base = baseName(file.name);
     const makeSingleZip = document.getElementById('splitSingleZip').checked;
 
-    if (!makeSingleZip && pages.length === 1) {
+    if (!makeSingleZip) {
       const pdf = await PDFLib.PDFDocument.create();
-      const [page] = await pdf.copyPages(sourcePdf, [pages[0] - 1]);
-      pdf.addPage(page);
+      const copied = await pdf.copyPages(sourcePdf, pages.map(page => page - 1));
+      copied.forEach(page => pdf.addPage(page));
       const bytes = await pdf.save({ useObjectStreams: true });
-      downloadBlob(new Blob([bytes], { type: 'application/pdf' }), `${base}_p${pages[0]}.pdf`);
+      downloadBlob(new Blob([bytes], { type: 'application/pdf' }), `${base}_extracted.pdf`);
     } else {
       const zip = new JSZip();
       for (let i = 0; i < pages.length; i += 1) {
@@ -287,16 +304,19 @@ async function renderPageAsJpg(pdf, pageNo, scale, quality) {
 function parsePageRange(value, pageCount) {
   if (!value.trim()) return Array.from({ length: pageCount }, (_, index) => index + 1);
   const pages = new Set();
-  value.split(',').map(part => part.trim()).filter(Boolean).forEach(part => {
+  for (const part of value.split(',').map(part => part.trim())) {
     const match = part.match(/^(\d+)(?:-(\d+))?$/);
-    if (!match) return;
+    if (!match) throwUserError(`페이지 범위를 확인하세요: ${part || '(빈 항목)'}`);
     const start = Number(match[1]);
     const end = Number(match[2] || match[1]);
-    for (let page = Math.min(start, end); page <= Math.max(start, end); page += 1) {
-      if (page >= 1 && page <= pageCount) pages.add(page);
+    if (start < 1 || end < 1 || start > pageCount || end > pageCount) throwUserError(`페이지는 1~${pageCount} 사이로 입력하세요.`);
+    const step = start <= end ? 1 : -1;
+    for (let page = start; ; page += step) {
+      pages.add(page);
+      if (page === end) break;
     }
-  });
-  return Array.from(pages).sort((a, b) => a - b);
+  }
+  return Array.from(pages);
 }
 
 async function withBusy(label, task) {
@@ -306,6 +326,7 @@ async function withBusy(label, task) {
     await task(updateProgress);
   } finally {
     setBusy(false);
+    els.progressSection.hidden = true;
   }
 }
 

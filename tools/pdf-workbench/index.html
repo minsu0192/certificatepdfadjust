@@ -20,7 +20,7 @@
     <header class="site-header">
       <div class="site-header__badge">PDF SUPPORT</div>
       <h1 class="site-title">PDF 업무지원</h1>
-      <p class="site-subtitle">PDF 합치기, 분리, JPG 변환, 압축, 잠금 해제를 브라우저 내부에서 처리합니다</p>
+      <p class="site-subtitle">PDF 편집, 페이지 정리·추출, 합치기, JPG 변환, 압축, 잠금 해제를 브라우저 내부에서 처리합니다</p>
       <p class="security-badge">모든 처리는 브라우저 안에서만 이루어집니다. 파일은 서버로 전송되지 않습니다.</p>
     </header>
 
@@ -30,14 +30,47 @@
 
     <section class="workbench">
       <nav class="tab-list" aria-label="PDF 작업 선택">
-        <button class="tab-button is-active" type="button" data-tab="merge">PDF 합치기</button>
+        <button class="tab-button is-active" type="button" data-tab="editor">편집 · 페이지 정리</button>
+        <button class="tab-button" type="button" data-tab="merge">PDF 합치기</button>
         <button class="tab-button" type="button" data-tab="split">PDF 분리</button>
         <button class="tab-button" type="button" data-tab="jpg">PDF → JPG</button>
         <button class="tab-button" type="button" data-tab="compress">PDF 압축</button>
         <button class="tab-button" type="button" data-tab="unlock">PDF 잠금 해제</button>
       </nav>
 
-      <section class="tab-panel is-active" data-panel="merge">
+      <section class="tab-panel is-active" data-panel="editor">
+        <div class="editor-heading"><div><h2>PDF 편집 · 페이지 정리</h2><p>페이지를 정리하고, 필요한 내용을 미리보기 위에 추가하세요.</p></div><label class="btn btn--secondary file-picker">PDF 열기<input id="editorInput" type="file" accept=".pdf,application/pdf" hidden></label></div>
+        <p id="editorStatus" class="note" role="status">PDF를 열면 페이지 미리보기가 표시됩니다. 새 파일을 열면 현재 편집 작업이 초기화됩니다.</p>
+        <div id="editorWorkspace" hidden>
+          <div class="editor-actions">
+            <button class="btn btn--secondary" id="editUndo">실행 취소</button><button class="btn btn--secondary" id="editRedo">다시 실행</button>
+            <label class="field">저장 파일명<input id="editName" value="edited.pdf"></label>
+            <button class="btn btn--primary" id="editSave">전체 PDF 저장</button>
+          </div>
+          <div class="editor-layout">
+            <aside class="page-sidebar"><h3>페이지 정리</h3><p class="editor-hint">드래그 또는 ← → 버튼으로 순서를 바꿉니다. 체크한 페이지를 추출·회전·삭제할 수 있습니다.</p>
+              <label class="field">선택할 페이지 (현재 순서)<input id="editRange" placeholder="예: 1-3,5"></label>
+              <div class="small-actions"><button id="editSelect" class="btn btn--secondary">범위 선택</button><button id="editAll" class="btn btn--secondary">전체 선택</button><button id="editNone" class="btn btn--secondary">선택 해제</button></div>
+              <p id="editCount" role="status"></p>
+              <div class="small-actions"><button id="editExtract" class="btn btn--secondary">선택 추출</button><button id="editRotate" class="btn btn--secondary">선택 회전 ↻</button><button id="editDelete" class="btn btn--secondary">선택 삭제</button></div>
+              <div id="editPages" class="page-grid"></div>
+            </aside>
+            <div class="editor-main">
+              <div class="edit-controls">
+                <label class="field">도구<select id="editTool"><option value="text">텍스트 추가</option><option value="cover">흰색으로 가리기</option><option value="highlight">형광펜</option><option value="image">이미지 · 서명 · 도장</option></select></label>
+                <label class="field" id="editTextField">추가할 텍스트<input id="editText" placeholder="내용을 입력하세요"></label>
+                <label class="field">글자 크기 (pt)<input id="editSize" type="number" min="6" max="144" value="16"></label>
+                <label class="field">색상<input id="editColor" type="color" value="#245c3b"></label>
+                <label class="field" id="editImageField">이미지 선택<input id="editImage" type="file" accept="image/png,image/jpeg"></label>
+              </div>
+              <p class="editor-hint" id="editHelp">텍스트를 입력한 뒤 페이지에서 원하는 위치를 클릭하세요. 추가 내용은 실행 취소로 되돌릴 수 있습니다.</p>
+              <div class="preview-scroll"><div id="editStage"><canvas id="editBase"></canvas><canvas id="editOverlay" aria-label="PDF 편집 미리보기"></canvas></div></div>
+              <p class="note">텍스트는 한글을 포함해 이미지로 추가됩니다. 기존 문구는 흰색으로 가린 뒤 새 글자를 추가할 수 있습니다. 가리기는 원본 텍스트의 영구 삭제가 아니며, 기존 문장 자체를 직접 수정하지 않습니다.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="tab-panel" data-panel="merge">
         <div class="panel-grid">
           <div class="drop-zone" data-drop="merge">
             <input id="mergeInput" type="file" accept="application/pdf,.pdf" multiple hidden>
@@ -71,7 +104,7 @@
               <span>페이지 범위</span>
               <input id="splitRange" placeholder="예: 1-3,5 또는 비우면 전체">
             </label>
-            <label class="check-field"><input id="splitSingleZip" type="checkbox" checked> 페이지별 PDF를 ZIP으로 저장</label>
+            <label class="check-field"><input id="splitSingleZip" type="checkbox" checked> 페이지별 PDF를 ZIP으로 저장 (해제하면 선택 페이지를 하나의 PDF로 추출)</label>
             <button class="btn btn--primary" id="splitRun" type="button">PDF 분리</button>
           </div>
         </div>
@@ -184,5 +217,6 @@
   </footer>
 
   <script src="app.js"></script>
+  <script src="editor.js"></script>
 </body>
 </html>
