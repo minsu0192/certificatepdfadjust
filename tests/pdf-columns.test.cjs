@@ -3,7 +3,13 @@ const {PDFDocument,StandardFonts,rgb}=require('pdf-lib');
 module.exports=async({browser,base,dir,shots})=>{
  const page=await browser.newPage({viewport:{width:1440,height:1100}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(base+'/tools/ai-table/');await page.locator('.advanced-options summary').click();await page.locator('#pdfOcr').selectOption('off');
- const read=async(file)=>{await page.locator('#pdfFile').setInputFiles(file);await page.locator('#importPdf').click();await page.waitForFunction(()=>!document.querySelector('#importPdf').hasAttribute('aria-busy'));assert.match(await page.locator('#importStatus').textContent(),/추출 완료/);return page.evaluate(()=>parse(document.querySelector('#source').value,'csv'));};
+ const drop=async(files,target='#pdfDropZone')=>{
+  const transfer=await page.evaluateHandle(files=>{const dt=new DataTransfer();files.forEach(f=>dt.items.add(new File([new Uint8Array(f.bytes)],f.name,{type:f.type})));return dt;},files);
+  await page.dispatchEvent(target,'dragenter',{dataTransfer:transfer});
+  await page.dispatchEvent(target,'dragover',{dataTransfer:transfer});
+  await page.dispatchEvent(target,'drop',{dataTransfer:transfer});await transfer.dispose();
+ };
+ const read=async(file,viaDrop=false)=>{if(viaDrop)await drop([{name:path.basename(file),type:'application/pdf',bytes:Array.from(fs.readFileSync(file))}]);else await page.locator('#pdfFile').setInputFiles(file);await page.locator('#importPdf').click();await page.waitForFunction(()=>!document.querySelector('#importPdf').hasAttribute('aria-busy'));assert.match(await page.locator('#importStatus').textContent(),/추출 완료/);return page.evaluate(()=>parse(document.querySelector('#source').value,'csv'));};
  // Real right-aligned values, shifted headers, reversed content stream, sparse page.
  const doc=await PDFDocument.create(),font=await doc.embedFont(StandardFonts.Helvetica),p=doc.addPage([595,842]);
  const put=(page,text,x,y)=>page.drawText(text,{x,y,font,size:12});
@@ -12,7 +18,13 @@ module.exports=async({browser,base,dir,shots})=>{
  put(p,'Amount',320,740);put(p,'Name',180,740);put(p,'Code',40,740);
  const p2=doc.addPage([595,842]);right(p2,'-12',460,740);right(p2,'00999',170,740);
  const file=path.join(dir,'shifted-columns.pdf');fs.writeFileSync(file,await doc.save());
- assert.deepEqual(await read(file),[['Code','Name','Amount'],['00123','Store','1234.56'],['00999','','-12']]);
+ assert.deepEqual(await read(file,true),[['Code','Name','Amount'],['00123','Store','1234.56'],['00999','','-12']]);
+ // Rejected/outside/busy drops must not replace the selected PDF or leave hover styling.
+ const selected=()=>page.locator('#pdfFile').evaluate(el=>el.files[0].name);
+ await drop([{name:'wrong.txt',type:'text/plain',bytes:[65]}]);assert.match(await page.locator('#importStatus').textContent(),/PDF 파일만/);assert.equal(await selected(),'shifted-columns.pdf');
+ await drop([{name:'one.pdf',type:'application/pdf',bytes:[65]},{name:'two.pdf',type:'application/pdf',bytes:[65]}]);assert.match(await page.locator('#importStatus').textContent(),/한 개씩/);assert.equal(await selected(),'shifted-columns.pdf');
+ await page.locator('#pdfFile').evaluate(el=>el.disabled=true);await drop([{name:'busy.pdf',type:'application/pdf',bytes:[65]}]);assert.equal(await selected(),'shifted-columns.pdf');await page.locator('#pdfFile').evaluate(el=>el.disabled=false);
+ await drop([{name:'outside.pdf',type:'application/pdf',bytes:[65]}],'body');assert.equal(await selected(),'shifted-columns.pdf');assert.equal(await page.locator('#pdfDropZone').evaluate(el=>el.classList.contains('is-dragover')),false);
  // Bordered table: multiline cells must stay in one row; blank cells must stay blank.
  const ruled=await PDFDocument.create(),rf=await ruled.embedFont(StandardFonts.Helvetica),rp=ruled.addPage([595,842]);
  const xs=[40,160,350,530],ys=[760,730,680,640];

@@ -19,7 +19,7 @@
       <section class="panel pdf-panel" aria-labelledby="pdfInputTitle">
         <div class="panel-heading"><span class="step-icon" aria-hidden="true">↓</span><div><span class="eyebrow">IMPORT</span><h2 id="pdfInputTitle">PDF에서 가져오기</h2></div><span class="optional-label">선택</span></div>
         <p class="section-description">PDF 파일이 있다면 내용을 추출해 표 입력란으로 가져오세요.</p>
-        <div class="file-zone"><span class="file-symbol" aria-hidden="true">PDF</span><label for="pdfFile">변환할 PDF 선택</label><span class="file-limit">최대 30MB · 100페이지</span><input type="file" id="pdfFile" accept="application/pdf,.pdf"></div>
+        <div class="file-zone" id="pdfDropZone"><span class="file-symbol" aria-hidden="true">PDF</span><label for="pdfFile">PDF를 여기에 끌어다 놓으세요</label><span class="file-limit">또는 파일 선택 · 최대 30MB · 100페이지</span><input type="file" id="pdfFile" accept="application/pdf,.pdf"></div>
         <div class="pdf-options"><label for="pdfMode">추출 방식</label><select id="pdfMode"><option value="table">표 형태로 추출</option><option value="lines">텍스트 줄 단위 (한 열)</option></select></div>
         <details class="advanced-options"><summary>글자 인식 · 비밀번호 설정</summary><div class="pdf-options"><label for="pdfOcr">스캔 PDF 글자 인식</label><select id="pdfOcr"><option value="kor+eng">한국어 + 영어</option><option value="eng">영어</option><option value="off">사용 안 함</option></select><label for="pdfPassword">PDF 비밀번호</label><input id="pdfPassword" type="password" placeholder="필요한 경우에만 입력" autocomplete="off"></div></details>
         <button id="importPdf" class="button button-secondary button-block">PDF 내용 가져오기 <span aria-hidden="true">→</span></button>

@@ -26,6 +26,54 @@
     }
   }
 
+  const dropZone = $('pdfDropZone'), fileInput = $('pdfFile');
+  let dragDepth = 0;
+  const hasFiles = event => Array.from(event.dataTransfer?.types || []).includes('Files');
+  const clearDrag = () => { dragDepth = 0; dropZone.classList.remove('is-dragover'); };
+  function validateFiles(files) {
+    if (files.length !== 1) return 'PDF 파일을 한 개씩 넣어주세요.';
+    if (!/\.pdf$/i.test(files[0].name) && files[0].type !== 'application/pdf') return 'PDF 파일만 넣을 수 있습니다.';
+    if (files[0].size > 30 * 1024 * 1024) return '30MB 이하의 PDF를 선택해주세요.';
+    return '';
+  }
+  function selectedFile() {
+    const file = fileInput.files[0];
+    dropZone.classList.toggle('has-file', !!file);
+    $('importStatus').className = 'hint';
+    $('importStatus').textContent = file ? `${file.name} 선택 완료. ‘PDF 내용 가져오기’를 눌러주세요.` : 'PDF 파일을 선택하거나 끌어다 놓아주세요.';
+  }
+  fileInput.addEventListener('change', () => {
+    if (!fileInput.files.length) { selectedFile(); return; }
+    const message = validateFiles(fileInput.files);
+    if (message) { fileInput.value = ''; dropZone.classList.remove('has-file'); $('importStatus').className = 'hint error'; $('importStatus').textContent = message; }
+    else selectedFile();
+  });
+  // Prevent the browser from navigating away if a file misses the upload target.
+  document.addEventListener('dragover', event => {
+    if (hasFiles(event)) { event.preventDefault(); event.dataTransfer.dropEffect = !fileInput.disabled && dropZone.contains(event.target) ? 'copy' : 'none'; }
+  });
+  document.addEventListener('drop', event => { if (hasFiles(event)) { event.preventDefault(); clearDrag(); } });
+  dropZone.addEventListener('dragenter', event => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    if (!fileInput.disabled) { dragDepth++; dropZone.classList.add('is-dragover'); }
+  });
+  dropZone.addEventListener('dragleave', event => {
+    if (!hasFiles(event)) return;
+    if (--dragDepth <= 0) clearDrag();
+  });
+  dropZone.addEventListener('drop', event => {
+    if (!hasFiles(event)) return;
+    event.preventDefault(); clearDrag();
+    if (fileInput.disabled) return;
+    const files = Array.from(event.dataTransfer.files), message = validateFiles(files);
+    if (message) { $('importStatus').className = 'hint error'; $('importStatus').textContent = message; return; }
+    const transfer = new DataTransfer(); transfer.items.add(files[0]);
+    fileInput.files = transfer.files;
+    selectedFile();
+  });
+  window.addEventListener('blur', clearDrag);
+
   $('importPdf').onclick = () => busy($('importPdf'), async () => {
     const info = $('importStatus'); info.className = 'hint';
     let task, doc;
