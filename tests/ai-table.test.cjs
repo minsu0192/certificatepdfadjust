@@ -5,6 +5,11 @@ module.exports=async({browser,base,dir,shots})=>{
  await page.screenshot({path:path.join(shots,'ai-table-desktop.png'),fullPage:true});
  await page.locator('#source').fill('코드,설명,금액,빈칸,긴번호,수식\n00123,"쉼표, 포함\n두 줄",1234,,1234567890123456,=1+1');await page.locator('#preview').click();assert.equal(await page.locator('#summary').textContent(),'1행 · 6열');
  const result=await page.evaluate(()=>{const ws=XLSX.utils.aoa_to_sheet(converted());return {a:ws.A2,c:ws.C2,d:ws.D2,e:ws.E2,f:ws.F2};});assert.equal(result.a.v,'00123');assert.equal(result.c.t,'n');assert.equal(result.d.v,'');assert.equal(result.e.t,'s');assert.equal(result.f.t,'s');assert(!result.f.f);
+ // Read the downloaded workbook to verify integer and decimal display formats.
+ await page.locator('#source').fill('항목,금액\n정수,1234\n소수,1234.56\n영,0\n음수,-1234');await page.locator('#preview').click();
+ const excelDownload=page.waitForEvent('download');await page.locator('#excel').click();const excelPath=path.join(dir,'number-formats.xlsx');await(await excelDownload).saveAs(excelPath);
+ const XLSX=require('../tools/ai-table/vendor/xlsx.min.js');const sheet=XLSX.read(fs.readFileSync(excelPath),{type:'buffer',cellNF:true}).Sheets['표'];
+ assert.equal(sheet.B2.z,'#,##0');assert.equal(sheet.B2.w,'1,234');assert.equal(sheet.B3.w,'1,234.56');assert.equal(sheet.B4.w,'0');assert.equal(sheet.B5.w,'-1,234');assert.equal(sheet.B2.t,'n');
  await page.locator('#source').fill('```markdown\n| 코드 | 금액 |\n| --- | ---: |\n| A\\|B | 1,234 |\n```');await page.locator('#preview').click();assert.equal(await page.locator('td').first().textContent(),'A|B');assert.equal(await page.locator('td').nth(1).textContent(),'1,234');
  await page.locator('#source').fill('a\tb\tc\n001\t2\t');await page.locator('#preview').click();assert.equal(await page.locator('#summary').textContent(),'1행 · 3열');
  await page.locator('#source').fill('a,b\n1,2,3');await page.locator('#preview').click();assert(await page.locator('#excel').isDisabled());assert((await page.locator('#status').textContent()).includes('2행'));
