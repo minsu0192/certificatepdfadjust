@@ -26,48 +26,6 @@
     }
   }
 
-  // Work in displayed-page coordinates, including page rotation, and group by baseline.
-  function pageLines(content, viewport) {
-    const lines = [];
-    const items = content.items.filter(it => it.str && it.str.trim()).map(it => {
-      const t = pdfjsLib.Util.transform(viewport.transform, it.transform);
-      return { text: it.str, x: t[4], y: t[5], width: it.width, height: Math.max(4, Math.hypot(t[2], t[3])) };
-    }).sort((a, b) => a.y - b.y || a.x - b.x);
-    for (const item of items) {
-      let line = lines.find(l => Math.abs(l.y - item.y) <= Math.min(l.height, item.height) * .4);
-      if (!line) { line = { y: item.y, height: item.height, items: [] }; lines.push(line); }
-      line.items.push(item);
-    }
-    return lines.sort((a, b) => a.y - b.y).map(line => {
-      const cells = [];
-      for (const it of line.items.sort((a, b) => a.x - b.x)) {
-        const prev = cells[cells.length - 1];
-        if (prev && it.x - prev.end < Math.max(8, it.height * 1.2)) {
-          prev.text += (it.x - prev.end > it.height * .15 ? ' ' : '') + it.text;
-          prev.end = Math.max(prev.end, it.x + it.width);
-        } else cells.push({ x: it.x, end: it.x + it.width, text: it.text });
-      }
-      return cells;
-    });
-  }
-  function tableRows(lines) {
-    if (!lines.length) return [];
-    // Use the fullest row as a column guide. Gaps retain blank cells; ambiguous rows
-    // are left as text in the nearest column for the user to review, never discarded.
-    const guide = lines.reduce((a, b) => b.length > a.length ? b : a, []);
-    return lines.map(line => {
-      const row = Array(guide.length).fill('');
-      for (const cell of line) {
-        let column = 0, distance = Infinity;
-        guide.forEach((anchor, i) => {
-          const d = Math.min(Math.abs(cell.x - anchor.x), Math.abs(cell.end - anchor.end));
-          if (d < distance) { column = i; distance = d; }
-        });
-        row[column] += (row[column] ? ' ' : '') + cell.text;
-      }
-      return row;
-    });
-  }
   $('importPdf').onclick = () => busy($('importPdf'), async () => {
     const info = $('importStatus'); info.className = 'hint';
     let task, doc;
@@ -80,7 +38,7 @@
       task = pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), password: $('pdfPassword').value });
       doc = await task.promise;
       if (doc.numPages > 100) throw Error('100페이지 이하로 나누어 넣어주세요.');
-      const extracted = []; let ocrPages = 0; const empty = [];
+      const pages = []; let textLines = 0; let ocrPages = 0; const empty = [];
       for (let n = 1; n <= doc.numPages; n++) {
         info.textContent = `${n}/${doc.numPages}페이지 추출 중…`;
         const page = await doc.getPage(n);
@@ -91,12 +49,20 @@
           if (recognised.items.map(it => it.str).join('').length > content.items.map(it => it.str).join('').length) content = recognised;
           ocrPages++;
         }
-        const lines = pageLines(content, page.getViewport({ scale: 1 }));
-        if (!lines.length) empty.push(n);
-        extracted.push(...($('pdfMode').value === 'lines' ? lines.map(cells => [cells.map(c => c.text).join(' ')]) : tableRows(lines)));
-        if (extracted.length > 10000) throw Error('추출 결과가 10,000행을 초과했습니다. PDF를 나누어 넣어주세요.');
+        const viewport = page.getViewport({ scale: 1 });
+        const items = content.items.filter(it => it.str && it.str.trim()).map(it => {
+          const t = pdfjsLib.Util.transform(viewport.transform, it.transform);
+          return { text: it.str, x: t[4], y: t[5], end: t[4] + it.width, height: Math.max(4, Math.hypot(t[2], t[3])) };
+        });
+        if (!items.length) empty.push(n);
+        textLines += items.length;
+        if (textLines > 200000) throw Error('추출 결과가 너무 큽니다. PDF를 나누어 넣어주세요.');
+        const rules = $('pdfMode').value === 'table' ? await PDFTableLayout.readRules(page, viewport, pdfjsLib) : [];
+        pages.push({ items, rules, width: viewport.width });
         page.cleanup();
       }
+      const extracted = PDFTableLayout.extract(pages, $('pdfMode').value);
+      if (extracted.length > 10000) throw Error('추출 결과가 10,000행을 초과했습니다. PDF를 나누어 넣어주세요.');
       if (!extracted.length) throw Error('추출할 글자가 없습니다. 스캔 PDF는 글자 인식을 켜고 다시 시도해주세요.');
       const width = Math.max(...extracted.map(r => r.length));
       if (width > 100) throw Error('추정된 열이 100개를 넘습니다. 텍스트 줄 단위로 다시 추출해주세요.');

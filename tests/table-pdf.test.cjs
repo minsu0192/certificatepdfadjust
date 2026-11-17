@@ -4,7 +4,7 @@ const path = require('path');
 const {PDFDocument, StandardFonts} = require('pdf-lib');
 module.exports = async ({browser,base,dir}) => {
  const page = await browser.newPage(); const errors=[]; page.on('pageerror',e=>errors.push(e.message));
- await page.goto(base+'/tools/ai-table/');
+ await page.goto(base+'/tools/ai-table/');await page.locator('.advanced-options summary').click();
  const download = async (id,name) => {const pending=page.waitForEvent('download',{timeout:90000});await page.locator(id).click();const file=path.join(dir,name);await(await pending).saveAs(file);return file;};
  await page.locator('#sample').click();
  const exported=await download('#pdf','korean-table.pdf');
@@ -13,6 +13,7 @@ module.exports = async ({browser,base,dir}) => {
  await page.locator('#pdfOcr').selectOption('off');await page.locator('#pdfFile').setInputFiles(exported);await page.locator('#importPdf').click();
  await page.waitForFunction(()=>document.querySelector('#importStatus').textContent.includes('추출 완료'));
  assert((await page.locator('#source').inputValue()).includes('고객코드'));assert((await page.locator('#source').inputValue()).includes('C00004'));
+ const roundtrip=await page.evaluate(()=>parse(document.querySelector('#source').value,'csv'));const customer=roundtrip.find(row=>row[0]==='C00004');assert(customer,'customer stays in first column');assert.equal(customer.length,7);assert.equal(customer[2],'415,255,000');assert.equal(customer[6],'TRUE');
  assert(await page.locator('#excel').isEnabled());assert(await page.locator('#word').isEnabled());
  // Independent two-page source with a missing middle cell and right aligned numbers.
  const doc=await PDFDocument.create();const font=await doc.embedFont(StandardFonts.Helvetica);
