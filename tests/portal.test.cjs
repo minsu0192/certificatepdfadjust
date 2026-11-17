@@ -6,11 +6,11 @@ module.exports = async ({ browser, base, dir, shots }) => {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   const visibleCards = () => page.locator('.tool-card:visible').count();
   await page.goto(base + '/');
-  assert.equal(await visibleCards(), 6);
+  assert.equal(await visibleCards(), 7);
   await page.locator('[data-category=invoice].category-tab').click(); assert.equal(await visibleCards(), 4);
   await page.locator('#toolSearch').fill('DHL'); assert.equal(await visibleCards(), 2);
   await page.locator('#toolSearch').fill('nothinghere'); assert(await page.locator('#emptyState').isVisible());
-  await page.locator('#clearFilters').click(); assert.equal(await visibleCards(), 6);
+  await page.locator('#clearFilters').click(); assert.equal(await visibleCards(), 7);
   await page.locator('#toolSearch').fill('png'); assert.equal(await visibleCards(), 1);
   await page.locator('#toolSearch').fill('');
   await page.screenshot({ path: path.join(shots, 'portal-desktop.png'), fullPage: true });

@@ -1,10 +1,11 @@
 // Service worker: makes the tools installable and usable offline.
 // Same-origin files: network first (always fresh when online), cached copy when offline.
 // Versioned CDN libraries: cache first (their URLs never change content).
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `shell-${VERSION}`, CDN = `cdn-${VERSION}`;
 const PRECACHE = [
   '/', '/portal.css', '/portal.js', '/tool-theme.css', '/tool-ocr.js', '/pwa.js', '/manifest.webmanifest', '/icons/icon-192.png',
+  '/tools/ai-table/', '/tools/ai-table/style.css', '/tools/ai-table/app.js', '/tools/ai-table/vendor/xlsx.min.js', '/tools/ai-table/vendor/docx.js',
   '/support/', '/support/app.js',
   '/tools/pdf-workbench/', '/tools/pdf-workbench/app.js', '/tools/pdf-workbench/editor.js', '/tools/pdf-workbench/style.css',
   '/tools/pdf-workbench/image-converter.js', '/tools/pdf-workbench/ocr-tab.js', '/tools/pdf-workbench/ttf-subset.js', '/tools/pdf-workbench/unlock-worker.js',
