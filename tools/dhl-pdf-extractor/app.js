@@ -1,5 +1,5 @@
 const CONFIG = {
-  PDFJS_WORKER_URL: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+  PDFJS_WORKER_URL: '/vendor/pdf.worker.min.js',
   OCR_LANG: 'kor+eng',
   OCR_SCALE: 2,
 };
@@ -175,6 +175,7 @@ async function processFiles() {
 async function extractPdfText(file, onStatus) {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
+  try {
   const pageTexts = [];
   for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
     const page = await pdf.getPage(pageNo);
@@ -212,6 +213,7 @@ async function extractPdfText(file, onStatus) {
     }
   }
   return { text, pages: pdf.numPages, method };
+  } finally { await pdf.destroy(); }
 }
 
 function textItemsToLines(items) {
@@ -305,7 +307,7 @@ function parseDhlEtradebill(text, fileName, method) {
     extra.settlementTotal = supplyAmount + extra.reimbursedExpense;
   }
   const houseBlNumber = extractHouseBlNumber(text);
-  const taxType = vat === 0 || /Zero\s*Rated|0\s*%/i.test(text) ? 'Zero Rated' : 'Taxable';
+  const taxType = vat === 0 || InvoiceAmounts.isZeroRated(text) ? 'Zero Rated' : 'Taxable';
   if (vat == null && taxType === 'Zero Rated') vat = 0;
   const reason = [
     !issueNumber ? 'Missing issue number' : '',
@@ -444,30 +446,11 @@ function sortedDhlChecks() {
   });
 }
 
-function parseAmount(value) {
-  if (value == null) return null;
-  const raw = String(value).trim();
-  if (!raw) return null;
-  const negative = /^\(.*\)$/.test(raw) || raw.startsWith('-');
-  const normalized = raw.replace(/[₩,\sA-Z가-힣]/gi, '').replace(/[()]/g, '');
-  if (!normalized || normalized === '-' || Number.isNaN(Number(normalized))) return null;
-  const amount = Number(normalized);
-  return negative ? -Math.abs(amount) : amount;
-}
+function parseAmount(value) { return InvoiceAmounts.parse(value); }
 
-function amountNear(text, labelRe) {
-  const match = text.match(labelRe);
-  if (!match) return null;
-  const after = text.slice(match.index).split('\n').slice(0, 3).join(' ');
-  const values = monetaryMatches(after);
-  return values.length ? values[values.length - 1] : null;
-}
+function amountNear(text, labelRe) { return InvoiceAmounts.near(text, labelRe); }
 
-function monetaryMatches(text) {
-  return [...String(text || '').matchAll(/-?\(?\d{1,3}(?:,\d{3})+(?:\.\d+)?\)?|-?\(?\d+\.\d{2}\)?/g)]
-    .map(item => parseAmount(item[0]))
-    .filter(value => value != null);
-}
+function monetaryMatches(text) { return InvoiceAmounts.matches(text); }
 
 function dhlInvoiceBlock(text, invoiceNumber) {
   const pageRe = new RegExp(`INVOICE\\s+${escapeRegExp(invoiceNumber)}\\s+Page\\s+\\d+\\s+of\\s+\\d+`, 'gi');

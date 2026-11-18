@@ -16,13 +16,29 @@ const state = {
   unlock: [],
   ocr: []
 };
+let taskController = null;
+const disabledControls = new Map();
+function checkCancelled() { taskController?.signal.throwIfAborted(); }
+function uniquePdfName(name, used) {
+  const base = baseName(name); let candidate = `${base}.pdf`, suffix = 2;
+  while (used.has(candidate.toLowerCase())) candidate = `${base}_${suffix++}.pdf`;
+  used.add(candidate.toLowerCase()); return candidate;
+}
+async function loadEditablePdf(bytes) {
+  try { return await PDFLib.PDFDocument.load(bytes); }
+  catch (error) {
+    if (error instanceof PDFLib.EncryptedPDFError || /encrypted/i.test(error.message)) throw new Error('암호화된 PDF입니다. 먼저 ‘잠금 해제’ 탭에서 해제한 뒤 다시 선택하세요.');
+    throw error;
+  }
+}
+document.getElementById('cancelTask').onclick = () => taskController?.abort();
 
 if (!window.PDFLib || !window.pdfjsLib || !window.JSZip) {
   els.cdnError.hidden = false;
 }
 
 if (window.pdfjsLib) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdf.worker.min.js';
 }
 
 document.querySelectorAll('.tab-button').forEach(button => {
@@ -94,7 +110,7 @@ function setupDrop(type, inputId, multiple) {
 }
 
 function setFiles(type, files, multiple) {
-  if (document.getElementById('unlockRun').disabled) return;
+  if (taskController) return;
   if (type === 'unlock') document.getElementById('unlockPassword').value = '';
   const accepted = files.filter(file => type === 'image' ? isImageFile(file) : isPdf(file));
   const input = document.querySelector(`[data-drop="${type}"] input[type=file]`) || document.getElementById(`${type}Input`);
@@ -139,7 +155,7 @@ function renderFileList(type) {
     clear.onclick = () => { state[type] = []; renderFileList(type); hideResult(); };
     actions.appendChild(clear); head.append(summary, actions); list.appendChild(head);
     if (type === 'merge' && window.pdfjsLib) Promise.all(files.map(countPages)).then(counts => {
-      if (state.merge !== files && state.merge.length !== files.length) return;
+      if (state.merge !== files || !summary.isConnected) return;
       const total = counts.reduce((sum, n) => sum + (n || 0), 0); summary.textContent = `${files.length}개 파일 · 총 ${total}페이지`;
     });
   }
@@ -155,6 +171,8 @@ function renderFileList(type) {
       button.setAttribute('aria-label', `${file.name} ${label}`);
       button.disabled = delta !== 0 && (index + delta < 0 || index + delta >= files.length);
       button.onclick = () => {
+        if (taskController || index < 0 || index >= state[type].length) return;
+        if (delta && (index + delta < 0 || index + delta >= state[type].length)) return;
         if (!delta) state[type].splice(index, 1);
         else [state[type][index], state[type][index + delta]] = [state[type][index + delta], state[type][index]];
         renderFileList(type);
@@ -169,8 +187,9 @@ function renderFileList(type) {
       li.ondragover = e => { if (e.dataTransfer.types.includes('text/x-merge-index')) { e.preventDefault(); li.classList.add('drop-target'); } };
       li.ondragleave = () => li.classList.remove('drop-target');
       li.ondrop = e => {
+        if (taskController || !e.dataTransfer.types.includes('text/x-merge-index')) return;
         const from = Number(e.dataTransfer.getData('text/x-merge-index')); li.classList.remove('drop-target');
-        if (!Number.isInteger(from) || from === index) return; e.preventDefault();
+        if (!Number.isInteger(from) || from < 0 || from >= state.merge.length || from === index) return; e.preventDefault();
         const [moved] = state.merge.splice(from, 1); state.merge.splice(index, 0, moved); renderFileList('merge');
       };
     }
@@ -182,7 +201,8 @@ async function handle(task) {
   try {
     await task();
   } catch (error) {
-    showResult('처리 실패', error.message || String(error), true);
+    const message = /encrypt|password/i.test(error.message || '') ? '암호화된 PDF입니다. 먼저 ‘잠금 해제’ 탭에서 해제한 뒤 다시 선택하세요.' : error.message || String(error);
+    showResult(error.name === 'AbortError' ? '작업 취소됨' : '처리 실패', error.name === 'AbortError' ? '작업을 취소했습니다. 선택한 원본 파일은 유지됩니다.' : message, error.name !== 'AbortError');
   }
 }
 
@@ -194,7 +214,8 @@ async function runMerge() {
   await withBusy('PDF를 합치는 중...', async update => {
     const mergedPdf = await PDFLib.PDFDocument.create();
     for (let i = 0; i < files.length; i += 1) {
-      const sourcePdf = await PDFLib.PDFDocument.load(await files[i].arrayBuffer(), { ignoreEncryption: true });
+      checkCancelled();
+      const sourcePdf = await loadEditablePdf(await files[i].arrayBuffer());
       const pages = await mergedPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
       pages.forEach(page => mergedPdf.addPage(page));
       update(((i + 1) / files.length) * 100, `${i + 1}/${files.length} 파일 처리 완료`);
@@ -251,9 +272,11 @@ async function runCompress() {
     let totalInput = 0;
     let totalOutput = 0;
     const outputs = [];
+    const usedNames = new Set();
 
     for (let i = 0; i < files.length; i += 1) {
       const file = files[i];
+      checkCancelled();
       totalInput += file.size;
       const bytes = mode === 'raster'
         ? await rasterCompressPdf(file, quality, scale, message => {
@@ -261,7 +284,7 @@ async function runCompress() {
           })
         : await optimizePdf(file);
       totalOutput += bytes.length;
-      const name = `${baseName(file.name)}_compressed.pdf`;
+      const name = uniquePdfName(`${baseName(file.name)}_compressed.pdf`, usedNames);
       outputs.push(pdfFile(bytes, name));
       if (zip) zip.file(name, bytes);
       else downloadBlob(new Blob([bytes], { type: 'application/pdf' }), name);
@@ -284,7 +307,7 @@ async function runCompress() {
 }
 
 async function optimizePdf(file) {
-  const pdf = await PDFLib.PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true });
+  const pdf = await loadEditablePdf(await file.arrayBuffer());
   pdf.setProducer('LVMH Fashion Group PDF Workbench');
   pdf.setCreator('LVMH Fashion Group PDF Workbench');
   const bytes = await pdf.save({ useObjectStreams: true, addDefaultPage: false, objectsPerTick: 50 });
@@ -293,8 +316,10 @@ async function optimizePdf(file) {
 
 async function rasterCompressPdf(file, quality, scale, onPage) {
   const source = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  try {
   const pdf = await PDFLib.PDFDocument.create();
   for (let pageNo = 1; pageNo <= source.numPages; pageNo += 1) {
+    checkCancelled();
     const sourcePage = await source.getPage(pageNo);
     const pageSize = sourcePage.getViewport({ scale: 1 });
     const blob = await renderPageAsJpg(source, pageNo, scale, quality);
@@ -306,19 +331,24 @@ async function rasterCompressPdf(file, quality, scale, onPage) {
   }
   const bytes = await pdf.save({ useObjectStreams: true });
   return bytes.length < file.size ? bytes : new Uint8Array(await file.arrayBuffer());
+  } finally { await source.destroy(); }
 }
 
 async function renderPageAsJpg(pdf, pageNo, scale, quality, mime = 'image/jpeg') {
+  checkCancelled();
   const page = await pdf.getPage(pageNo);
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d', { alpha: false });
+  if (viewport.width > 16384 || viewport.height > 16384 || viewport.width * viewport.height > 64000000) throw new Error('페이지 이미지가 너무 큽니다. 해상도를 낮춰 다시 시도하세요.');
   canvas.width = Math.ceil(viewport.width);
   canvas.height = Math.ceil(viewport.height);
+  try {
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvasContext: context, viewport }).promise;
-  return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('이미지 생성에 실패했습니다. 해상도를 낮춰 주세요.')), mime, quality));
+  return await new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('이미지 생성에 실패했습니다. 해상도를 낮춰 주세요.')), mime, quality));
+  } finally { canvas.width = canvas.height = 0; page.cleanup(); }
 }
 
 function parsePageRange(value, pageCount) {
@@ -340,26 +370,38 @@ function parsePageRange(value, pageCount) {
 }
 
 async function withBusy(label, task) {
+  if (taskController) throw new Error('진행 중인 작업이 있습니다. 완료하거나 취소한 뒤 다시 시도하세요.');
+  taskController = new AbortController();
   setBusy(true);
   updateProgress(2, label);
   try {
     await task(updateProgress);
+    checkCancelled();
   } finally {
+    taskController = null;
     setBusy(false);
     els.progressSection.hidden = true;
   }
 }
 
 function updateProgress(percent, label) {
+  checkCancelled();
   els.progressSection.hidden = false;
   els.progressBar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
   els.progressLabel.textContent = label;
 }
 
 function setBusy(isBusy) {
-  document.querySelectorAll('button').forEach(button => {
-    button.disabled = isBusy;
-  });
+  if (isBusy) {
+    document.querySelectorAll('button,input,select,textarea').forEach(control => {
+      if (control.id === 'cancelTask') return;
+      disabledControls.set(control, control.disabled); control.disabled = true;
+    });
+  } else {
+    disabledControls.forEach((disabled, control) => { if (control.isConnected) control.disabled = disabled; });
+    disabledControls.clear();
+  }
+  document.getElementById('cancelTask').hidden = !isBusy;
   if (isBusy) hideResult();
 }
 
@@ -403,6 +445,7 @@ function sendTo(tab, files) {
 window.workbench = { sendTo, offerNext, pdfFile };
 
 function downloadBlob(blob, fileName) {
+  checkCancelled();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -473,16 +516,13 @@ async function runUnlock() {
       update((i / files.length) * 100, `${i + 1}/${files.length} · ${file.name} 잠금 해제 중`);
       try {
         const bytes = await unlockPdf(file, password);
-        const base = `${baseName(file.name)}_unlocked`;
-        let name = `${base}.pdf`;
-        let suffix = 2;
-        while (usedNames.has(name.toLowerCase())) name = `${base}_${suffix++}.pdf`;
-        usedNames.add(name.toLowerCase());
+        const name = uniquePdfName(`${baseName(file.name)}_unlocked.pdf`, usedNames);
         outputs.push(pdfFile(bytes, name));
         if (zip) zip.file(name, bytes);
         else downloadBlob(new Blob([bytes], { type: 'application/pdf' }), name);
         saved += 1;
       } catch (error) {
+        if (error.name === 'AbortError') throw error;
         failures.push(`${file.name}: ${error.message || String(error)}`);
       }
       update(((i + 1) / files.length) * 100, `${i + 1}/${files.length} 파일 처리 완료`);
@@ -509,11 +549,16 @@ async function unlockPdf(file, password) {
     const worker = new Worker('unlock-worker.js');
     const finish = (error, result) => {
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       worker.terminate();
       if (error) reject(new Error(error));
       else resolve(result);
     };
+    const signal = taskController?.signal;
+    const onAbort = () => { clearTimeout(timer); worker.terminate(); reject(signal.reason); };
     const timer = setTimeout(() => finish('처리 시간이 초과되었습니다. 더 작은 PDF로 다시 시도하세요.'), 180000);
+    if (signal?.aborted) { onAbort(); return; }
+    signal?.addEventListener('abort', onAbort, { once: true });
     worker.onmessage = ({ data: result }) => finish(result.error, result.bytes);
     worker.onerror = event => {
       event.preventDefault();

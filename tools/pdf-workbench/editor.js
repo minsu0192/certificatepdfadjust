@@ -37,7 +37,7 @@
     const ctx = overlay.getContext('2d'); ctx.save(); ctx.font = `${size}px ${FONT}`; ctx.textBaseline = 'top';
     const m = ctx.measureText('가Ag'); ctx.restore(); return Math.abs(m.alphabeticBaseline);
   }
-  const locked = () => busy || rendering || working;
+  const locked = () => busy || rendering || working || !!taskController;
   const mode = () => workspace.dataset.mode;
   const tool = () => $('editTool').value;
   const current = () => pages[active];
@@ -757,6 +757,7 @@
   function openFiles(files) {
     if (!files.length || locked()) return;
     if (dirty && !confirm('저장하지 않은 편집 내용이 있습니다. 새 PDF를 열면 사라집니다. 계속할까요?')) return;
+    if (!$('editRestore').hidden && !confirm('복구할 이전 편집 작업이 있습니다. 이전 작업을 버리고 새 PDF를 열까요?')) return;
     return action(async () => {
       if (files.length !== 1) throw new Error('편집할 PDF 한 개만 놓아 주세요. 다른 PDF는 열고 난 뒤 \'PDF 끼워넣기\'로 추가할 수 있습니다.');
       const file = files[0];
@@ -811,34 +812,74 @@
 
   // ---------- autosave (IndexedDB, this browser only) ----------
   const DB_NAME = 'pdf-workbench-editor';
+  let storageOwned = false, storageQueue = Promise.resolve();
+  $('editClearStorage').disabled = true;
+  const storageReady = new Promise(resolve => {
+    const unavailable = () => {
+      $('editAutosave').checked = false; $('editAutosave').disabled = true;
+      $('editStorageStatus').textContent = '다른 탭에서 임시 저장 중이거나 자동 저장을 사용할 수 없습니다. 편집본을 PDF로 저장해주세요.';
+      resolve();
+    };
+    if (!navigator.locks) { unavailable(); return; }
+    navigator.locks.request('pdf-workbench-editor-storage', { ifAvailable: true }, lock => {
+      if (!lock) { unavailable(); return; }
+      storageOwned = true; $('editClearStorage').disabled = false; resolve();
+      // Browser releases the lock when this document closes or reloads.
+      return new Promise(() => {});
+    }).catch(unavailable);
+  });
   function idb(modeRW, fn) {
+    const operation = storageQueue.then(() => storageReady).then(() => {
+    if (!storageOwned) throw new Error('이 탭에서는 임시 저장을 사용할 수 없습니다.');
     return new Promise((resolve, reject) => {
       let req; try { req = indexedDB.open(DB_NAME, 1); } catch (e) { reject(e); return; }
       req.onupgradeneeded = () => req.result.createObjectStore('session');
       req.onerror = () => reject(req.error);
       req.onsuccess = () => {
         const db = req.result, tx = db.transaction('session', modeRW), store = tx.objectStore('session'); let result;
-        Promise.resolve(fn(store)).then(r => { result = r; });
-        tx.oncomplete = () => { db.close(); resolve(result); }; tx.onerror = () => { db.close(); reject(tx.error); };
+        try { Promise.resolve(fn(store)).then(r => { result = r; }).catch(reject); } catch (e) { db.close(); reject(e); return; }
+        tx.oncomplete = () => { db.close(); resolve(result); }; tx.onerror = tx.onabort = () => { db.close(); reject(tx.error || new Error('임시 저장이 중단됐습니다.')); };
       };
     });
+    });
+    storageQueue = operation.catch(() => {}); return operation;
   }
   const idbGet = key => idb('readonly', store => new Promise(r => { const q = store.get(key); q.onsuccess = () => r(q.result); q.onerror = () => r(undefined); }));
+  const RETENTION = 24 * 60 * 60 * 1000;
+  try { $('editAutosave').checked = !!navigator.locks && localStorage.getItem('pdf-editor-autosave') !== 'off'; } catch { /* private browsing */ }
+  storageReady.then(() => { if (storageOwned && !$('editAutosave').checked) $('editStorageStatus').textContent = '임시 저장 꺼짐 · 탭을 닫으면 편집 작업이 사라집니다'; });
+  function clearSavedSession() {
+    clearTimeout(autosaveTimer);
+    return idb('readwrite', store => store.clear());
+  }
+  $('editAutosave').onchange = () => {
+    try { localStorage.setItem('pdf-editor-autosave', $('editAutosave').checked ? 'on' : 'off'); } catch { /* private browsing */ }
+    if ($('editAutosave').checked) scheduleAutosave();
+    else clearSavedSession().catch(() => notify('임시 저장을 지우지 못했습니다. 브라우저 저장 공간 설정을 확인하세요.', true));
+    $('editStorageStatus').textContent = $('editAutosave').checked ? '원본 포함 · 24시간 지난 작업은 재접속 시 삭제 · 전체 저장 시 삭제' : '임시 저장 꺼짐 · 탭을 닫으면 편집 작업이 사라집니다';
+  };
+  $('editClearStorage').onclick = action(async () => {
+    $('editAutosave').checked = false; $('editAutosave').onchange();
+    await clearSavedSession(); $('editRestore').hidden = true;
+    notify('저장된 편집 원본과 작업을 삭제했습니다. 현재 화면에서는 계속 편집할 수 있습니다.');
+  });
   function persistSources() {
-    const data = sources.map(s => ({ name: s.name, blank: s.blank, bytes: s.bytes }));
-    idb('readwrite', store => { store.put(data, 'sources'); }).catch(() => {});
+    scheduleAutosave();
   }
   function scheduleAutosave() {
     clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => {
-      if (!pages.length) return;
+      if (!storageOwned || !pages.length || !$('editAutosave').checked || !dirty) return;
       const state = { pages, active, name: $('editName').value, fileName: sources[0]?.name, dirty, savedAt: Date.now() };
-      idb('readwrite', store => { store.put(clone(state), 'state'); }).catch(() => {});
+      const data = sources.map(s => ({ name: s.name, blank: s.blank, bytes: s.bytes }));
+      idb('readwrite', store => { store.put(data, 'sources'); store.put(clone(state), 'state'); }).catch(() => { $('editStorageStatus').textContent = '임시 저장 실패 · 편집본을 PDF로 저장해주세요'; });
     }, 800);
   }
   async function offerRestore() {
     try {
-      const state = await idbGet('state'); if (!state?.dirty || pages.length) return;
+      const state = await idbGet('state');
+      if (pages.length) return;
+      if (!$('editAutosave').checked || !state?.dirty || !Number.isFinite(state.savedAt) || Date.now() - state.savedAt > RETENTION) { await clearSavedSession(); return; }
       const when = new Date(state.savedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       $('editRestoreText').textContent = `저장하지 않은 편집 작업이 있습니다 · ${state.fileName || 'PDF'} · ${when}`;
       $('editRestore').hidden = false;
@@ -846,7 +887,7 @@
   }
   $('editRestoreYes').onclick = action(async () => {
     const [state, saved] = [await idbGet('state'), await idbGet('sources')];
-    if (!state || !saved?.length) { $('editRestore').hidden = true; throw new Error('이전 작업을 찾지 못했습니다.'); }
+    if (!state || !saved?.length || Date.now() - state.savedAt > RETENTION) { await clearSavedSession(); $('editRestore').hidden = true; throw new Error('복구할 작업이 없거나 보관 시간이 지났습니다.'); }
     busy = true;
     try {
       resetDocument();
@@ -856,7 +897,7 @@
       await showDocument(state.fileName || 'PDF'); notify('이전 작업을 불러왔습니다.');
     } finally { busy = false; }
   });
-  $('editRestoreNo').onclick = () => { $('editRestore').hidden = true; idb('readwrite', store => { store.clear(); }).catch(() => {}); };
+  $('editRestoreNo').onclick = () => { $('editRestore').hidden = true; clearSavedSession().catch(() => {}); };
   $('editName').addEventListener('change', scheduleAutosave);
   $('editorInput').onchange = () => { const files = Array.from($('editorInput').files); $('editorInput').value = ''; openFiles(files); };
   const drop = $('editorDrop');
@@ -954,7 +995,7 @@
         downloadBlob(await zip.generateAsync({ type: 'blob' }), `${name}_pages.zip`);
       } else {
         downloadBlob(new Blob([await output.save()], { type: 'application/pdf' }), normalizePdfName(onlySelected ? `${name}_extracted.pdf` : $('editName').value || 'edited.pdf'));
-        if (!onlySelected) { dirty = false; scheduleAutosave(); }
+        if (!onlySelected) { dirty = false; if (storageOwned) await clearSavedSession().catch(() => notify('편집본을 저장했지만 임시 저장 삭제에 실패했습니다. 브라우저 저장 공간 설정을 확인하세요.', true)); }
       }
       notify(`${chosen.length}페이지 ${separate ? 'ZIP' : onlySelected ? '추출본' : '편집본'} 저장 완료${redacted ? ` · ${redacted}페이지는 영구 삭제를 위해 이미지로 저장됨` : ''}. 원본 파일은 변경되지 않습니다.`);
     } finally { busy = false; }

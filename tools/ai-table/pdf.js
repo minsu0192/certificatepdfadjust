@@ -1,5 +1,7 @@
 'use strict';
 (() => {
+  let importController = null;
+  $('cancelImport').onclick = () => importController?.abort();
   const scripts = new Map();
   function script(url) {
     if (!scripts.has(url)) scripts.set(url, new Promise((resolve, reject) => {
@@ -10,16 +12,19 @@
     return scripts.get(url);
   }
   async function reader() {
-    await script('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    await script('/vendor/pdf.min.js');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdf.worker.min.js';
   }
   async function busy(button, work) {
     const controls = [...document.querySelectorAll('input,textarea,select,button')];
     const disabled = controls.map(el => el.disabled);
     controls.forEach(el => { el.disabled = true; });
     button.setAttribute('aria-busy', 'true');
+    const importing = button.id === 'importPdf';
+    if (importing) { importController = new AbortController(); $('cancelImport').hidden = false; $('cancelImport').disabled = false; }
     try { await work(); }
     finally {
+      if (importing) { importController = null; $('cancelImport').hidden = true; }
       controls.forEach((el, i) => { el.disabled = disabled[i]; });
       ['excel', 'word', 'pdf'].forEach(id => { $(id).disabled = !rows; });
       button.removeAttribute('aria-busy');
@@ -67,7 +72,7 @@
     event.preventDefault(); clearDrag();
     if (fileInput.disabled) return;
     const files = Array.from(event.dataTransfer.files), message = validateFiles(files);
-    if (message) { $('importStatus').className = 'hint error'; $('importStatus').textContent = message; return; }
+    if (message) { fileInput.value = ''; dropZone.classList.remove('has-file'); $('importStatus').className = 'hint error'; $('importStatus').textContent = message; return; }
     const transfer = new DataTransfer(); transfer.items.add(files[0]);
     fileInput.files = transfer.files;
     selectedFile();
@@ -85,17 +90,21 @@
       await reader();
       task = pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), password: $('pdfPassword').value });
       doc = await task.promise;
+      importController.signal.throwIfAborted();
       if (doc.numPages > 100) throw Error('100페이지 이하로 나누어 넣어주세요.');
-      const pages = []; let textLines = 0; let ocrPages = 0; const empty = [];
+      const pages = []; let textLines = 0; let ocrPages = 0; const empty = [], ocrFailed = [];
       for (let n = 1; n <= doc.numPages; n++) {
+        importController.signal.throwIfAborted();
         info.textContent = `${n}/${doc.numPages}페이지 추출 중…`;
         const page = await doc.getPage(n);
         let content = await page.getTextContent();
         if (ToolOcr.needsOcr(content) && $('pdfOcr').value !== 'off') {
           info.textContent = `${n}/${doc.numPages}페이지 글자 인식 중…`;
-          const recognised = await ToolOcr.recognise(page, { lang: $('pdfOcr').value });
-          if (recognised.items.map(it => it.str).join('').length > content.items.map(it => it.str).join('').length) content = recognised;
-          ocrPages++;
+          try {
+            const recognised = await ToolOcr.recognise(page, { lang: $('pdfOcr').value, signal: importController.signal });
+            if (recognised.items.map(it => it.str).join('').length > content.items.map(it => it.str).join('').length) content = recognised;
+            ocrPages++;
+          } catch (e) { if (e.name === 'AbortError') throw e; ocrFailed.push(n); }
         }
         const viewport = page.getViewport({ scale: 1 });
         const items = content.items.filter(it => it.str && it.str.trim()).map(it => {
@@ -110,6 +119,7 @@
         page.cleanup();
       }
       const extracted = PDFTableLayout.extract(pages, $('pdfMode').value);
+      importController.signal.throwIfAborted();
       if (extracted.length > 10000) throw Error('추출 결과가 10,000행을 초과했습니다. PDF를 나누어 넣어주세요.');
       if (!extracted.length) throw Error('추출할 글자가 없습니다. 스캔 PDF는 글자 인식을 켜고 다시 시도해주세요.');
       const width = Math.max(...extracted.map(r => r.length));
@@ -119,10 +129,12 @@
       $('source').value = source; $('format').value = 'csv';
       $('title').value = file.name.replace(/\.pdf$/i, '');
       $('header').checked = false;
+      $('textColumns').value = '';
       preview();
-      info.textContent = `${doc.numPages}페이지 추출 완료${ocrPages ? ` · ${ocrPages}페이지 OCR` : ''}${empty.length ? ` · 글자 없는 페이지: ${empty.join(', ')}` : ''}. 열 위치·숫자·반복 머리글을 확인하고, 필요하면 입력란을 수정해주세요. 제목 행은 직접 선택해주세요.`;
+      info.textContent = `${doc.numPages}페이지 추출 완료${ocrPages ? ` · ${ocrPages}페이지 OCR` : ''}${empty.length ? ` · 글자 없는 페이지: ${empty.join(', ')}` : ''}${ocrFailed.length ? ` · OCR 실패: ${ocrFailed.join(', ')}페이지 (원래 텍스트만 사용). 인터넷 연결을 확인해 다시 시도하세요` : ''}. 열 위치·숫자·반복 머리글을 확인하고, 필요하면 입력란을 수정해주세요. AWB·HS코드 열은 텍스트로 지정해주세요.`;
+      if (ocrFailed.length) info.className = 'hint error';
     } catch (e) {
-      info.textContent = e.name === 'PasswordException' ? 'PDF 비밀번호가 필요하거나 올바르지 않습니다. 비밀번호를 입력하고 다시 시도해주세요.' : (e.message || 'PDF를 읽지 못했습니다.');
+      info.textContent = e.name === 'AbortError' ? '가져오기를 취소했습니다. 기존 표 입력은 유지됩니다.' : e.name === 'PasswordException' ? 'PDF 비밀번호가 필요하거나 올바르지 않습니다. 비밀번호를 입력하고 다시 시도해주세요.' : (e.message || 'PDF를 읽지 못했습니다.');
       info.className = 'hint error';
     } finally { if (doc) await doc.destroy(); else if (task) await task.destroy(); }
   });
@@ -146,7 +158,7 @@
       $('status').className = ''; $('status').textContent = 'PDF를 만드는 중…';
       const data = converted().map(row => row.map(v => typeof v === 'number' ? v.toLocaleString('en-US', {maximumFractionDigits:15}) : v));
       await Promise.all([
-        script('https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js'),
+        script('/vendor/pdf-lib.min.js'),
         script('/tools/pdf-workbench/vendor/fontkit/fontkit.umd.min.js'),
         script('/tools/pdf-workbench/ttf-subset.js')
       ]);

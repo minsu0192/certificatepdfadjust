@@ -8,8 +8,8 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 
   <!-- CDN Libraries -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="/vendor/pdf.min.js"></script>
+  <script src="/tools/ai-table/vendor/xlsx.min.js"></script>
 
   <link rel="stylesheet" href="style.css">
 </head>
@@ -49,8 +49,8 @@
         </div>
         <p class="drop-zone__primary">PDF 파일 또는 폴더를 여기에 드래그하세요</p>
         <p class="drop-zone__secondary">폴더째 드래그하면 하위 파일 전체를 한번에 처리합니다</p>
-        <input type="file" id="folderInput" webkitdirectory multiple accept=".pdf" hidden>
-        <input type="file" id="fileInput" multiple accept=".pdf" hidden>
+        <input type="file" id="folderInput" webkitdirectory multiple accept=".pdf" hidden aria-label="폴더 선택">
+        <input type="file" id="fileInput" multiple accept=".pdf" hidden aria-label="파일 선택">
         <div class="drop-zone__buttons">
           <button class="btn btn--secondary" id="btnSelectFolder" type="button">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -137,7 +137,7 @@
     <details class="debug-panel" id="debugPanel" hidden>
       <summary>🔍 파싱 실패 파일 원문 (regex 디버그용)</summary>
       <p class="debug-panel__hint">아래 텍스트를 복사해서 공유해 주시면 패턴을 수정할 수 있습니다.</p>
-      <textarea id="debugText" readonly></textarea>
+      <textarea aria-label="오류 상세 정보" id="debugText" readonly></textarea>
     </details>
 
     <!-- Footer -->
@@ -145,7 +145,7 @@
       <span>Created by <strong>Minsu Bae</strong></span>
       <span class="site-footer__sep">·</span>
       <span>데이터는 브라우저 밖으로 나가지 않습니다</span>
-    </footer>
+     <a href="/support/?tool=import-certificate">도움 · 오류 신고</a></footer>
 
   </div>
 

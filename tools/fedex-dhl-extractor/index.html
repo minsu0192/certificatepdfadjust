@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FedEx Invoice Check</title><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#253654"><link rel="icon" href="/icons/icon-192.png"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><script src="/pwa.js" defer></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="/vendor/pdf.min.js"></script>
+  <script src="/tools/ai-table/vendor/xlsx.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -30,8 +30,8 @@
     </section>
 
     <section class="drop-zone" id="dropZone">
-      <input type="file" id="folderInput" webkitdirectory multiple accept=".pdf" hidden>
-      <input type="file" id="fileInput" multiple accept=".pdf" hidden>
+      <input type="file" id="folderInput" webkitdirectory multiple accept=".pdf" hidden aria-label="폴더 선택">
+      <input type="file" id="fileInput" multiple accept=".pdf" hidden aria-label="파일 선택">
       <div class="file-icon">PDF</div>
       <h2>FedEx PDF 또는 폴더를 여기에 드래그하세요</h2>
       <p>Duty는 AWB별로, Freight는 레콘 제외 대상으로 정리합니다.</p>
@@ -96,8 +96,8 @@
       </div>
     </section>
 
-    <footer>Created by <strong>Minsu Bae</strong><span>·</span>브라우저 내부 처리</footer>
+    <footer>Created by <strong>Minsu Bae</strong><span>·</span>브라우저 내부 처리 <a href="/support/?tool=fedex-dhl-extractor">도움 · 오류 신고</a></footer>
   </main>
-  <script src="app.js"></script>
+  <script src="/invoice-amounts.js"></script><script src="app.js"></script>
 </body>
 </html>

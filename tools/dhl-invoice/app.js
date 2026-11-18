@@ -1,6 +1,6 @@
 import PostalMime from 'https://cdn.jsdelivr.net/npm/postal-mime@3.0.0/+esm';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdf.worker.min.js';
 
 const COLUMNS = {
   fileName: { label: '파일명', width: 38 }, subject: { label: '메일 제목', width: 46 }, mailDate: { label: '메일 발송일', width: 20 },
@@ -31,7 +31,7 @@ window.addEventListener('unhandledrejection', event => recordError('비동기 �
 function selectedColumns() { return STATE.columnOrder.filter(key => document.querySelector(`[data-column="${key}"] input`).checked); }
 function renderColumnSettings(selectedKeys) {
   const selected = new Set(selectedKeys), list = document.getElementById('columnList');
-  list.innerHTML = STATE.columnOrder.map((key, index) => `<div class="column-item" data-column="${key}"><span class="order">${index + 1}</span><label><input type="checkbox" ${selected.has(key) ? 'checked' : ''}><span>${COLUMNS[key].label}</span></label><em>${selected.has(key) ? '포함' : '제외'}</em><span class="move"><button data-dir="-1" ${index === 0 ? 'disabled' : ''}>↑</button><button data-dir="1" ${index === STATE.columnOrder.length - 1 ? 'disabled' : ''}>↓</button></span></div>`).join('');
+  list.innerHTML = STATE.columnOrder.map((key, index) => `<div class="column-item" data-column="${key}"><span class="order">${index + 1}</span><label><input type="checkbox" ${selected.has(key) ? 'checked' : ''}><span>${COLUMNS[key].label}</span></label><em>${selected.has(key) ? '포함' : '제외'}</em><span class="move"><button aria-label="${COLUMNS[key].label} 위로 이동" data-dir="-1" ${index === 0 ? 'disabled' : ''}>↑</button><button aria-label="${COLUMNS[key].label} 아래로 이동" data-dir="1" ${index === STATE.columnOrder.length - 1 ? 'disabled' : ''}>↓</button></span></div>`).join('');
   list.querySelectorAll('input').forEach(input => input.addEventListener('change', () => { if (!selectedColumns().length) input.checked = true; input.closest('.column-item').querySelector('em').textContent = input.checked ? '포함' : '제외'; updateColumnSummary(); refreshTable(); }));
   list.querySelectorAll('[data-dir]').forEach(button => button.addEventListener('click', () => { const key = button.closest('.column-item').dataset.column, from = STATE.columnOrder.indexOf(key), to = from + Number(button.dataset.dir); if (to < 0 || to >= STATE.columnOrder.length) return; const checked = selectedColumns(); [STATE.columnOrder[from], STATE.columnOrder[to]] = [STATE.columnOrder[to], STATE.columnOrder[from]]; renderColumnSettings(checked); refreshTable(); }));
   updateColumnSummary();
@@ -101,6 +101,7 @@ function isInvoicePdf(part) {
 async function parsePdfAttachment(content) {
   const data = content instanceof Uint8Array ? content : new Uint8Array(content);
   const pdf = await pdfjsLib.getDocument({ data }).promise;
+  try {
   let fullText = '';
   for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
     const page = await pdf.getPage(pageNo), pageContent = await (window.ToolOcr ? ToolOcr.pageContent(page) : page.getTextContent()), lineMap = new Map();
@@ -112,6 +113,7 @@ async function parsePdfAttachment(content) {
     fullText += [...lineMap.entries()].sort((a, b) => b[0] - a[0]).map(([, items]) => items.sort((a, b) => a.x - b.x).map(item => item.str).join(' ')).join('\n') + '\n';
   }
   return normalizeBody(fullText);
+  } finally { await pdf.destroy(); }
 }
 function extractInvoiceFields(text) {
   const invoiceMatch = text.match(/\bINVOICE\s+([A-Z0-9-]+)/i);

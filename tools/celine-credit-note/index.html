@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>CELINE 크레딧 노트 정리</title><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#253654"><link rel="icon" href="/icons/icon-192.png"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><script src="/pwa.js" defer></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="/vendor/pdf.min.js"></script>
+  <script src="/tools/ai-table/vendor/xlsx.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -24,8 +24,8 @@
     </header>
 
     <section class="drop-zone" id="dropZone">
-      <input type="file" id="folderInput" webkitdirectory multiple accept=".pdf" hidden>
-      <input type="file" id="fileInput" multiple accept=".pdf" hidden>
+      <input type="file" id="folderInput" webkitdirectory multiple accept=".pdf" hidden aria-label="폴더 선택">
+      <input type="file" id="fileInput" multiple accept=".pdf" hidden aria-label="파일 선택">
       <div class="file-icon">CN</div>
       <h2>Credit Note PDF 또는 폴더를 여기에 드래그하세요</h2>
       <p>기준 항목: Date, Doc No, Delivery Note, Order No, Customer reference, SKU, Description, QTY, Unit Price, Net Amount</p>
@@ -66,7 +66,7 @@
       <details class="warnings" id="warnings" hidden><summary>확인이 필요한 PDF <b id="warningCount">0</b>건</summary><ul id="warningList"></ul></details>
       <details class="diagnostics" id="diagnostics" hidden open>
         <summary>오류 상세 정보 · Minsu Bae에게 전달용</summary>
-        <textarea id="diagnosticText" readonly></textarea>
+        <textarea aria-label="오류 상세 정보" id="diagnosticText" readonly></textarea>
         <div class="diagnostic-actions">
           <button id="btnCopyError" class="btn btn-light" type="button">오류 정보 복사</button>
           <button id="btnDownloadError" class="btn btn-ghost" type="button">오류 보고서 다운로드</button>
@@ -74,7 +74,7 @@
       </details>
     </section>
 
-    <footer>Created by <strong>Minsu Bae</strong><span>·</span>브라우저 내부 처리</footer>
+    <footer>Created by <strong>Minsu Bae</strong><span>·</span>브라우저 내부 처리 <a href="/support/?tool=celine-credit-note">도움 · 오류 신고</a></footer>
   </main>
 
   <script src="/tool-ocr.js"></script>

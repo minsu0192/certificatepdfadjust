@@ -1,6 +1,6 @@
 /* ── CONFIG ──────────────────────────────────────────────────── */
 const CONFIG = {
-  PDFJS_WORKER_URL: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+  PDFJS_WORKER_URL: '/vendor/pdf.worker.min.js',
 
   REGEX: {
     // 신고번호: 5자리-2자리-숫자+알파벳 (예: 23176-26-197002M)
@@ -120,8 +120,8 @@ function renderColumnSettings(selectedKeys) {
       <label><input type="checkbox" ${selected.has(key) ? 'checked' : ''}> <span class="column-name">${COLUMN_DEFINITIONS[key].label}</span></label>
       <span class="column-state">${selected.has(key) ? '포함' : '제외'}</span>
       <div class="column-move">
-        <button type="button" title="위로 이동" aria-label="위로 이동" data-direction="-1" ${index === 0 ? 'disabled' : ''}>↑</button>
-        <button type="button" title="아래로 이동" aria-label="아래로 이동" data-direction="1" ${index === STATE.columnOrder.length - 1 ? 'disabled' : ''}>↓</button>
+        <button type="button" title="위로 이동" aria-label="${COLUMN_DEFINITIONS[key].label} 위로 이동" data-direction="-1" ${index === 0 ? 'disabled' : ''}>↑</button>
+        <button type="button" title="아래로 이동" aria-label="${COLUMN_DEFINITIONS[key].label} 아래로 이동" data-direction="1" ${index === STATE.columnOrder.length - 1 ? 'disabled' : ''}>↓</button>
       </div>
     </div>`).join('');
 
@@ -266,6 +266,7 @@ async function collectPdfFiles(dataTransfer) {
 async function parsePdf(file) {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  try {
   let fullText = '';
 
   for (let i = 1; i <= pdf.numPages; i++) {
@@ -290,6 +291,7 @@ async function parsePdf(file) {
   }
 
   return fullText;
+  } finally { await pdf.destroy(); }
 }
 
 /* ── TEXT EXTRACTION ─────────────────────────────────────────── */
@@ -313,12 +315,8 @@ function extractFromText(rawText, fileName) {
   const declCurrency    = extractCurrency(rawText);
   const exportCountry   = extractExportCountry(rawText);
   const logistics      = extractLogisticsFields(rawText);
-  if (!exportCountry) {
-    const idx = rawText.search(/적\s*출\s*국/);
-    if (idx >= 0) console.log(`[적출국-miss] ${fileName}:`, JSON.stringify(rawText.slice(idx, idx + 60)));
-    else          console.log(`[적출국-miss] ${fileName}: "적출국" 텍스트 없음, 앞500자=`, JSON.stringify(rawText.slice(0, 500)));
-  }
-  const items = extractItemLines(rawText);
+
+  const items = extractItemLines(rawText, message => warns.push(`${fileName} / ${declNumber}: ${message}`));
 
   const missingLogistics = [
     ['마스터 B/L', logistics.masterBl],
@@ -511,7 +509,7 @@ function extractItemName(text) {
   return '';
 }
 
-function extractItemLines(text) {
+function extractItemLines(text, warn = () => {}) {
   const items = [];
   const globalItemName = extractItemName(text);
 
@@ -520,10 +518,12 @@ function extractItemLines(text) {
   const noMatches = [...text.matchAll(/\(NO\.\s*\d+\)/gi)];
 
   if (noMatches.length > 0) {
-    for (const noMatch of noMatches) {
+    for (const [itemIndex, noMatch] of noMatches.entries()) {
       // (NO. XX) 이후 600자 안에서 금액 패턴 탐색
       const chunkStart = noMatch.index + noMatch[0].length;
-      const chunk = text.slice(chunkStart, chunkStart + 600);
+      const chunkEnd = noMatches[itemIndex + 1]?.index ?? text.length;
+      const chunk = text.slice(chunkStart, Math.min(chunkStart + 600, chunkEnd));
+      const label = noMatch[0];
 
       let amtMatch = chunk.match(CONFIG.REGEX.AMOUNT_LINE_WITH_CURR);
       let itemCurrency = null;
@@ -536,17 +536,18 @@ function extractItemLines(text) {
         total     = parseKoreanNumber(amtMatch[5]);
       } else {
         amtMatch = chunk.match(CONFIG.REGEX.AMOUNT_LINE);
-        if (!amtMatch) continue;
+        if (!amtMatch) { warn(`${label} 수량·단가·금액을 해석하지 못해 제외했습니다. 원문을 확인하세요.`); continue; }
         qty       = parseKoreanNumber(amtMatch[1]);
         unitPrice = parseKoreanNumber(amtMatch[3]);
         total     = parseKoreanNumber(amtMatch[4]);
       }
       // (NO. XX) 앵커 기반은 소액도 허용 (부품류: 400원, 214원 등 실제 존재)
-      if (unitPrice === 0 && total === 0) continue;
+      if ([qty, unitPrice, total].some(n => n == null)) { warn(`${label} 숫자 해석 실패로 제외했습니다.`); continue; }
+      if (unitPrice === 0 && total === 0) warn(`${label} 단가와 금액이 모두 0입니다. 무상 품목인지 확인하세요.`);
       // sanity check: qty × unitPrice 와 total 이 10% 이상 차이나면 잘못된 매칭
       if (qty > 0 && unitPrice > 0 && total > 0) {
         const expected = qty * unitPrice;
-        if (Math.abs(expected - total) / total > 0.10) continue;
+        if (Math.abs(expected - total) / total > 0.10) { warn(`${label} 수량×단가(${expected})와 금액(${total})이 달라 제외했습니다. 원문을 확인하세요.`); continue; }
       }
 
       // 품목 설명 추출
@@ -572,7 +573,7 @@ function extractItemLines(text) {
 
       // HS코드: 금액 이후 800자 내 세번부호 탐색
       const afterStart = chunkStart + amtIdx + amtMatch[0].length;
-      const afterChunk = text.slice(afterStart, afterStart + 800);
+      const afterChunk = text.slice(afterStart, Math.min(afterStart + 800, chunkEnd));
       let hsCode = '';
       const seobunM = afterChunk.match(CONFIG.REGEX.HS_SEOBUN);
       if (seobunM) hsCode = seobunM[1].replace(/[.\-]/g, '').slice(0, 10);
@@ -589,7 +590,7 @@ function extractItemLines(text) {
   }
 
   // (NO. XX) 마커가 없는 비표준 형식 폴백: 줄별 파싱
-  if (items.length === 0) {
+  if (noMatches.length === 0) {
     const lines = text.split(/\n|\r\n?/);
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -611,9 +612,9 @@ function extractItemLines(text) {
         unitPrice = parseKoreanNumber(amtMatch[3]);
         total     = parseKoreanNumber(amtMatch[4]);
       }
-      if (!lineCurrency && total < 1000) continue;
+      if ([qty, unitPrice, total].some(n => n == null)) { warn(`${i + 1}행 숫자 해석 실패로 제외했습니다.`); continue; }
       if (qty > 0 && unitPrice > 0 && total > 0) {
-        if (Math.abs(qty * unitPrice - total) / total > 0.10) continue;
+        if (Math.abs(qty * unitPrice - total) / total > 0.10) { warn(`${i + 1}행 수량×단가와 금액이 달라 제외했습니다. 원문을 확인하세요.`); continue; }
       }
 
       const amtIdx = line.search(lineCurrency ? CONFIG.REGEX.AMOUNT_LINE_WITH_CURR : CONFIG.REGEX.AMOUNT_LINE);
@@ -635,8 +636,9 @@ function extractItemLines(text) {
 }
 
 function parseKoreanNumber(str) {
-  const n = parseFloat(str.replace(/,/g, ''));
-  return isNaN(n) ? 0 : n;
+  const raw = String(str ?? '').replace(/,/g, '').trim();
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) return null;
+  const n = Number(raw); return Number.isFinite(n) ? n : null;
 }
 
 /* ── PROCESSING ORCHESTRATOR ─────────────────────────────────── */

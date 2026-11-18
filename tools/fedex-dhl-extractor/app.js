@@ -1,5 +1,5 @@
 const CONFIG = {
-  PDFJS_WORKER_URL: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+  PDFJS_WORKER_URL: '/vendor/pdf.worker.min.js',
   OCR_LANG: 'kor+eng',
   OCR_SCALE: 2,
 };
@@ -198,6 +198,7 @@ async function processFiles() {
 async function extractPdfText(file, onStatus) {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
+  try {
   const pageTexts = [];
 
   for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
@@ -236,6 +237,7 @@ async function extractPdfText(file, onStatus) {
     }
   }
   return { text, pages: pdf.numPages, method };
+  } finally { await pdf.destroy(); }
 }
 
 function textItemsToLines(items) {
@@ -447,12 +449,13 @@ function parseDhlEtradebill(text, fileName, method) {
   const supplyAmount = amounts.supplyAmount;
   let vat = amounts.vat;
   const total = amounts.total;
-  const taxType = /영세|Zero\s*Rated|0\s*%/i.test(text) ? 'Zero Rated' : 'Taxable';
+  const taxType = vat === 0 || InvoiceAmounts.isZeroRated(text) ? 'Zero Rated' : 'Taxable';
   if (vat == null && taxType === 'Zero Rated') vat = 0;
   const itemInfo = firstMatch(text, [/\bNO\.\s*([^\n]+)/i, /참조정보\s*\n([^\n]+)/i, /품목\s*[:：]?\s*([^\n]+)/i]);
   const reviews = [];
   if (!approval) reviews.push(reviewRow(fileName, '', 'Missing approval number', '', '', '', 'CHECK'));
   if (supplyAmount == null) reviews.push(reviewRow(fileName, approval, 'Missing supply amount', '', '', '', 'CHECK'));
+  if (vat == null) reviews.push(reviewRow(fileName, approval, 'Missing VAT', '', '', '', 'CHECK'));
   if (total == null) reviews.push(reviewRow(fileName, approval, 'Missing total amount', '', '', '', 'CHECK'));
   if (supplyAmount != null && vat != null && total != null && Math.abs((supplyAmount + vat) - total) > 1) {
     reviews.push(reviewRow(fileName, approval, 'eTradebill total mismatch', total, supplyAmount + vat, supplyAmount + vat - total, 'CHECK'));
@@ -685,30 +688,11 @@ function sortedFedExChecks() {
   });
 }
 
-function parseAmount(value) {
-  if (value == null) return null;
-  const raw = String(value).trim();
-  if (!raw) return null;
-  const negative = /^\(.*\)$/.test(raw) || raw.startsWith('-');
-  const normalized = raw.replace(/[₩,\sA-Z가-힣]/gi, '').replace(/[()]/g, '');
-  if (!normalized || normalized === '-' || Number.isNaN(Number(normalized))) return null;
-  const amount = Number(normalized);
-  return negative ? -Math.abs(amount) : amount;
-}
+function parseAmount(value) { return InvoiceAmounts.parse(value); }
 
-function amountNear(text, labelRe) {
-  const match = text.match(labelRe);
-  if (!match) return null;
-  const after = text.slice(match.index).split('\n').slice(0, 3).join(' ');
-  const values = monetaryMatches(after);
-  return values.length ? values[values.length - 1] : null;
-}
+function amountNear(text, labelRe) { return InvoiceAmounts.near(text, labelRe); }
 
-function monetaryMatches(text) {
-  return [...String(text || '').matchAll(/-?\(?\d{1,3}(?:,\d{3})+(?:\.\d+)?\)?|-?\(?\d+\.\d{2}\)?/g)]
-    .map(item => parseAmount(item[0]))
-    .filter(value => value != null);
-}
+function monetaryMatches(text) { return InvoiceAmounts.matches(text); }
 
 function fedexAwbBlocks(text) {
   const matches = [...String(text || '').matchAll(/(?:선적일자\s*)?Ship\s*Date\s*[:：]?/gi)];
@@ -719,22 +703,7 @@ function fedexAwbBlocks(text) {
   }).filter(block => /Air\s*Waybill\s*Number|\b\d{10,15}\b/i.test(block));
 }
 
-function sumAmountsForLabel(text, labelRe) {
-  const values = [];
-  const lines = String(text || '').split('\n').map(line => line.trim()).filter(Boolean);
-  for (let i = 0; i < lines.length; i++) {
-    if (!labelRe.test(lines[i])) continue;
-    const sameLine = monetaryMatches(lines[i].replace(labelRe, ''));
-    if (sameLine.length) {
-      values.push(sameLine[sameLine.length - 1]);
-      continue;
-    }
-    const nextLines = lines.slice(i + 1, i + 2).join(' ');
-    const nextValues = monetaryMatches(nextLines);
-    if (nextValues.length) values.push(nextValues[0]);
-  }
-  return values.length ? values.reduce((sum, value) => sum + value, 0) : null;
-}
+function sumAmountsForLabel(text, labelRe) { return InvoiceAmounts.sum(text, labelRe); }
 
 function sumPresentAmounts(values) {
   const present = values.filter(value => value != null);

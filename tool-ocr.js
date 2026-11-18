@@ -11,7 +11,7 @@
     if (window.Tesseract) return Promise.resolve(window.Tesseract);
     return loader ||= new Promise((resolve, reject) => {
       const script = document.createElement('script'); script.src = TESSERACT_URL; script.async = true;
-      script.onload = () => window.Tesseract ? resolve(window.Tesseract) : reject(new Error('OCR 엔진을 불러오지 못했습니다.'));
+      script.onload = () => { if (window.Tesseract) resolve(window.Tesseract); else { loader = null; script.remove(); reject(new Error('OCR 엔진을 불러오지 못했습니다.')); } };
       script.onerror = () => { loader = null; reject(new Error('OCR 엔진을 불러오지 못했습니다. 인터넷 연결을 확인하세요.')); };
       document.head.appendChild(script);
     });
@@ -20,7 +20,7 @@
     if (!workers.has(lang)) {
       workers.set(lang, (async () => {
         const T = await loadTesseract();
-        return T.createWorker(lang, 1, { logger: m => { if (m.status === 'recognizing text') status(`스캔 문서 글자 인식 중 ${Math.round((m.progress || 0) * 100)}%`); else if (m.status) status('글자 인식 준비 중…'); } });
+        return T.createWorker(lang, 1, { logger: m => { if (!active) return; if (m.status === 'recognizing text') status(`스캔 문서 글자 인식 중 ${Math.round((m.progress || 0) * 100)}%`); else if (m.status) status('글자 인식 준비 중…'); } });
       })().catch(e => { workers.delete(lang); throw e; }));
     }
     return workers.get(lang);
@@ -50,12 +50,22 @@
     out.push(cur); return out;
   }
 
-  async function recognise(page, { lang = 'kor+eng', scale = 2.5 } = {}) {
+  async function recognise(page, { lang = 'kor+eng', scale = 2.5, signal } = {}) {
+    signal?.throwIfAborted();
+    active++; status('글자 인식을 준비하는 중…');
     const viewport = page.getViewport({ scale }), canvas = document.createElement('canvas');
+    let onAbort, renderTask, engine, rejectAbort;
+    const aborted = new Promise((_, reject) => { rejectAbort = reject; });
+    try {
+    if (viewport.width > 16384 || viewport.height > 16384 || viewport.width * viewport.height > 64000000) throw new Error('OCR 페이지가 너무 큽니다. 페이지 크기를 줄여 다시 시도하세요.');
     canvas.width = Math.ceil(viewport.width); canvas.height = Math.ceil(viewport.height);
     const ctx = canvas.getContext('2d', { willReadFrequently: true }); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    const { data } = await (await worker(lang)).recognize(canvas);
+    renderTask = page.render({ canvasContext: ctx, viewport });
+    onAbort = () => { renderTask?.cancel?.(); if (engine) { workers.delete(lang); Promise.resolve(engine.terminate()).catch(() => {}); } rejectAbort(signal.reason); };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    await Promise.race([renderTask.promise, aborted]); signal?.throwIfAborted();
+    engine = await Promise.race([worker(lang), aborted]); signal?.throwIfAborted();
+    const { data } = await Promise.race([engine.recognize(canvas), aborted]); signal?.throwIfAborted();
     const items = [];
     for (const line of data.lines || []) {
       const base = line.baseline && line.baseline.has_baseline !== false ? line.baseline : null;
@@ -71,6 +81,8 @@
       }
     }
     return { items, styles: { ocr: { ascent: .8, descent: -.2 } }, ocr: true };
+    } catch (e) { if (signal?.aborted) throw signal.reason; throw e; }
+    finally { signal?.removeEventListener('abort', onAbort); canvas.width = canvas.height = 0; done(); }
   }
 
   async function pageContent(page, options = {}) {

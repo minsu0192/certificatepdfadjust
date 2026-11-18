@@ -13,18 +13,21 @@
 
   async function ocrPdf(file, lang, force, progress) {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const out = await PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
+    const out = await loadEditablePdf(bytes);
     const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
     const found = [];
     let recognised = 0, skipped = 0;
+    try {
     for (let i = 1; i <= doc.numPages; i++) {
+      checkCancelled();
       progress(i - 1, doc.numPages, `${i}/${doc.numPages}페이지 글자 인식 중`);
       const page = await doc.getPage(i);
-      if (!force && !ToolOcr.needsOcr(await page.getTextContent())) { skipped++; continue; }
-      const result = await ToolOcr.recognise(page, { lang });
+      if (!force && !ToolOcr.needsOcr(await page.getTextContent())) { skipped++; page.cleanup(); continue; }
+      const result = await ToolOcr.recognise(page, { lang, signal: taskController?.signal });
       found.push({ index: i - 1, items: result.items }); recognised++;
+      page.cleanup();
     }
-    doc.destroy();
+    } finally { await doc.destroy(); }
     const chars = found.flatMap(p => p.items.map(it => it.str)).join('');
     if (chars.trim()) {
       if (!window.fontkit || !window.subsetTrueType) throw new Error('글꼴 모듈을 불러오지 못했습니다. 새로고침 후 다시 시도하세요.');
@@ -53,11 +56,11 @@
     if (!files.length) throwUserError('글자를 인식할 PDF를 선택하세요.');
     const lang = document.getElementById('ocrLang').value, force = document.getElementById('ocrForce').checked;
     await withBusy('글자 인식 엔진을 준비하는 중...', async update => {
-      const outputs = []; let recognised = 0, skipped = 0;
+      const outputs = [], usedNames = new Set(); let recognised = 0, skipped = 0;
       for (let f = 0; f < files.length; f++) {
         const result = await ocrPdf(files[f], lang, force, (done, total, label) => update(((f + done / total) / files.length) * 100, `${files[f].name} · ${label}`));
         recognised += result.recognised; skipped += result.skipped;
-        outputs.push(window.workbench.pdfFile(result.bytes, `${baseName(files[f].name)}_ocr.pdf`));
+        outputs.push(window.workbench.pdfFile(result.bytes, uniquePdfName(`${baseName(files[f].name)}_ocr.pdf`, usedNames)));
       }
       if (outputs.length === 1) downloadBlob(outputs[0], outputs[0].name);
       else { const zip = new JSZip(); outputs.forEach(o => zip.file(o.name, o)); downloadBlob(await zip.generateAsync({ type: 'blob' }), `ocr_pdfs_${Date.now()}.zip`); }

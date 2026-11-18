@@ -646,3 +646,5 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline:3px soli
 .send-to { flex-shrink:0; height:38px; padding:0 8px; border:1px solid #dce3ed; border-radius:8px; background:#fff; color:#4b5870; font:600 .76rem var(--font-body); cursor:pointer; }
 @media(max-width:560px) { .save-actions { flex-wrap:wrap; } .save-actions input { flex-basis:100%; } .save-actions .btn--primary,.send-to { flex:1; } }
 .settings-card .check-field { align-self:flex-start; padding:0; }
+/* Storage controls remain visible before and during editing. */
+.autosave-settings{display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px;margin:12px 0 18px;color:#52647c;font-size:13px;line-height:1.7}.autosave-settings label{display:flex;align-items:center;gap:7px}.autosave-settings span{flex:1;min-width:180px}.autosave-settings .btn{font-size:12px}.progress-section #cancelTask{margin-top:10px}footer a{text-decoration:underline}

@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>CSV · PDF 형식 변환</title>
+  <link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#253654"><link rel="icon" href="/icons/icon-192.png"><script defer src="/pwa.js"></script>
   <link rel="stylesheet" href="style.css">
   <script defer src="vendor/xlsx.min.js"></script><script defer src="vendor/docx.js"></script>
   <script defer src="app.js"></script><script defer src="/tool-ocr.js"></script>
@@ -19,10 +20,10 @@
       <section class="panel pdf-panel" aria-labelledby="pdfInputTitle">
         <div class="panel-heading"><span class="step-icon" aria-hidden="true">↓</span><div><span class="eyebrow">IMPORT</span><h2 id="pdfInputTitle">PDF에서 가져오기</h2></div><span class="optional-label">선택</span></div>
         <p class="section-description">PDF 파일이 있다면 내용을 추출해 표 입력란으로 가져오세요.</p>
-        <div class="file-zone" id="pdfDropZone"><span class="file-symbol" aria-hidden="true">PDF</span><label for="pdfFile">PDF를 여기에 끌어다 놓으세요</label><span class="file-limit">또는 파일 선택 · 최대 30MB · 100페이지</span><input type="file" id="pdfFile" accept="application/pdf,.pdf"></div>
+        <div class="file-zone" id="pdfDropZone"><span class="file-symbol" aria-hidden="true">PDF</span><label for="pdfFile">PDF를 여기에 끌어다 놓으세요</label><span class="file-limit">또는 파일 선택 · 최대 30MB · 100페이지</span><input type="file" id="pdfFile" accept="application/pdf,.pdf" aria-label="파일 선택"></div>
         <div class="pdf-options"><label for="pdfMode">추출 방식</label><select id="pdfMode"><option value="table">표 형태로 추출</option><option value="lines">텍스트 줄 단위 (한 열)</option></select></div>
         <details class="advanced-options"><summary>글자 인식 · 비밀번호 설정</summary><div class="pdf-options"><label for="pdfOcr">스캔 PDF 글자 인식</label><select id="pdfOcr"><option value="kor+eng">한국어 + 영어</option><option value="eng">영어</option><option value="off">사용 안 함</option></select><label for="pdfPassword">PDF 비밀번호</label><input id="pdfPassword" type="password" placeholder="필요한 경우에만 입력" autocomplete="off"></div></details>
-        <button id="importPdf" class="button button-secondary button-block">PDF 내용 가져오기 <span aria-hidden="true">→</span></button>
+        <button id="importPdf" class="button button-secondary button-block">PDF 내용 가져오기 <span aria-hidden="true">→</span></button><button id="cancelImport" class="button button-quiet" hidden>가져오기 취소</button>
         <p id="importStatus" role="status" class="hint">스캔 문서는 OCR로 인식합니다. 최초 엔진 로딩에는 인터넷 연결이 필요합니다.</p>
         <p class="fine-print">표 선과 글자 위치를 바탕으로 열을 구분합니다. 복잡한 배치·병합 셀은 추출 후 확인해주세요.</p>
       </section>
@@ -32,6 +33,7 @@
         <label class="sr-only" for="source">변환할 표 내용</label><textarea id="source" placeholder="고객코드,매장,매출액&#10;C00004,Hyundai Pangyo,415255000" spellcheck="false"></textarea>
         <div class="options field-row"><label for="format">입력 형식<select id="format"><option value="auto">자동 감지</option><option value="csv">CSV (쉼표)</option><option value="tsv">탭 구분</option><option value="md">마크다운 표</option></select></label><label for="title">파일명 / 문서 제목<input id="title" value="CSV · PDF 형식 변환" maxlength="100"></label></div>
         <div class="checkbox-row"><label><input type="checkbox" id="header" checked> 첫 행을 제목으로</label><label><input type="checkbox" id="numbers" checked> 숫자 자동 변환 <span class="muted">(앞자리 0 유지)</span></label></div>
+        <div class="pdf-options"><label for="textColumns">텍스트로 유지할 열 <span class="muted">AWB · HS코드 · 연도 등</span></label><input id="textColumns" placeholder="열 번호를 쉼표로 구분 · 예: 1,3" inputmode="text"></div>
         <div class="input-footer"><span class="hint">설명을 제외한 표 하나만 입력해주세요.</span><button id="preview" class="button button-primary">표 미리보기 <span aria-hidden="true">→</span></button></div>
       </section>
     </div>
@@ -42,7 +44,7 @@
       <div class="export-bar"><label for="orientation">문서 방향 <span class="muted">워드 · PDF</span><select id="orientation"><option value="auto">자동 (7열 이상 가로)</option><option value="portrait">세로</option><option value="landscape">가로</option></select></label><div class="downloads"><button id="excel" class="button export-excel" disabled>엑셀 <span>.xlsx</span> <span aria-hidden="true">↓</span></button><button id="word" class="button export-word" disabled>워드 <span>.docx</span> <span aria-hidden="true">↓</span></button><button id="pdf" class="button export-pdf" disabled>PDF <span>.pdf</span> <span aria-hidden="true">↓</span></button></div></div>
       <p class="fine-print">미리보기는 최대 200행이며 파일에는 모든 행이 포함됩니다. 원본 서식·병합·수식은 복원되지 않고, 수식처럼 보이는 값은 문자로 저장합니다.</p>
     </section>
-    <footer><span>입력한 파일과 내용은 서버에 전송하거나 저장하지 않습니다.</span><span>Created by Minsu Bae</span></footer>
+    <footer><span>입력한 파일과 내용은 서버에 전송하거나 저장하지 않습니다.</span><span>Created by Minsu Bae</span> <a href="/support/?tool=ai-table">도움 · 오류 신고</a></footer>
   </main>
 </body>
 </html>

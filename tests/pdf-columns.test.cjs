@@ -19,10 +19,11 @@ module.exports=async({browser,base,dir,shots})=>{
  const p2=doc.addPage([595,842]);right(p2,'-12',460,740);right(p2,'00999',170,740);
  const file=path.join(dir,'shifted-columns.pdf');fs.writeFileSync(file,await doc.save());
  assert.deepEqual(await read(file,true),[['Code','Name','Amount'],['00123','Store','1234.56'],['00999','','-12']]);
- // Rejected/outside/busy drops must not replace the selected PDF or leave hover styling.
- const selected=()=>page.locator('#pdfFile').evaluate(el=>el.files[0].name);
- await drop([{name:'wrong.txt',type:'text/plain',bytes:[65]}]);assert.match(await page.locator('#importStatus').textContent(),/PDF 파일만/);assert.equal(await selected(),'shifted-columns.pdf');
- await drop([{name:'one.pdf',type:'application/pdf',bytes:[65]},{name:'two.pdf',type:'application/pdf',bytes:[65]}]);assert.match(await page.locator('#importStatus').textContent(),/한 개씩/);assert.equal(await selected(),'shifted-columns.pdf');
+ // Rejected drops clear stale selection; outside/busy drops preserve it.
+ const selected=()=>page.locator('#pdfFile').evaluate(el=>el.files[0]?.name);
+ await drop([{name:'wrong.txt',type:'text/plain',bytes:[65]}]);assert.match(await page.locator('#importStatus').textContent(),/PDF 파일만/);assert.equal(await selected(),undefined);
+ await drop([{name:'one.pdf',type:'application/pdf',bytes:[65]},{name:'two.pdf',type:'application/pdf',bytes:[65]}]);assert.match(await page.locator('#importStatus').textContent(),/한 개씩/);assert.equal(await selected(),undefined);
+ await page.locator('#pdfFile').setInputFiles(file);
  await page.locator('#pdfFile').evaluate(el=>el.disabled=true);await drop([{name:'busy.pdf',type:'application/pdf',bytes:[65]}]);assert.equal(await selected(),'shifted-columns.pdf');await page.locator('#pdfFile').evaluate(el=>el.disabled=false);
  await drop([{name:'outside.pdf',type:'application/pdf',bytes:[65]}],'body');assert.equal(await selected(),'shifted-columns.pdf');assert.equal(await page.locator('#pdfDropZone').evaluate(el=>el.classList.contains('is-dragover')),false);
  // Bordered table: multiline cells must stay in one row; blank cells must stay blank.
